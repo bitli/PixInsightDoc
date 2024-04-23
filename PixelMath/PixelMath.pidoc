@@ -1,0 +1,2903 @@
+\documentclass PIToolDoc
+
+\tool PixelMath
+
+
+\module PixelMath
+
+\categories {
+   Automation
+}
+
+\keywords {
+   process, container
+}
+
+\author {
+   Jean-Marc Lugrin, PI user
+}
+
+\copyright {
+   2024, Jean-Marc Lugrin
+}
+
+\brief {
+   ProcessContainer lets you group various image processing steps (represented by process icons) and run them together on an image. 
+   It's like a recipe for editing your images!
+}
+
+\introduction {
+
+PixelMath is a versatile tool within PixInsight that performs calculations to generate 
+new image content. It operates by applying a series of expressions systematically and 
+independently to each pixel. This can result in either creating a completely new image 
+or replacing the content of an existing image, which can be subjected to masking.
+
+Additionally, PixelMath offers functionalities to accumulate data from all pixels 
+and display the result in the log, with or without generating a new image.
+
+   \subsection  {Principle of operations}
+   {
+      In PixInsight, images can either be grayscale (a single channel) or color 
+      (red, blue, green, and optionally alpha). Regardless of the image format, 
+      PixelMath performs calculations using pixel values ranging from 0 to 1 in floating-point format. 
+      The resulting values are then converted to the target image format.
+
+      Understanding PixelMath involves the following key points:
+      \list[unordered] {
+         {  Each calculation is defined by a list of expressions, with the last expression providing 
+         the final value (usually between 0.0 to 1.0). If there's no calculation for a channel, 
+         the value 0 is assumed.
+         }
+         {  Each channel of each pixel in the generated image is calculated separately. 
+         Gray scale images require a single calculation, while RGB images may require 1, 3, 
+         or 4 calculations (where a single calculation can determine all channels, 
+         and the alpha channel is optional).
+         }
+         {  Calculations can reference source images, image characteristics 
+         (such as size), pixel characteristics (such as current X or Y values), 
+         and other sources of information like environment variables. 
+         However, they cannot refer to other pixels within the generated image, 
+         ensuring independence and optimization of calculations.
+         }
+         {  PixelMath provides a range of operators, symbols, and functions 
+         for advanced calculations. The final expression must return a scalar value. 
+         If it returns an image, the corresponding pixel from the source image is used as the value.
+         }
+      } %list
+   } % subsection principle of operations
+
+   \subsection  {Mode of operations}
+   {
+      PixelMath can be used in two ways:
+      \list[ordered] {
+         { 
+            When applied globally, it must generate a new image with specified characteristics 
+            (size, format). The calculation can refer to the position of the pixel or 
+            data of images referred to by image identifier to provide the pixel values.
+         }
+         { 
+            When applied to an image, the so-called target image can be used to provide the 
+            characteristic of the generated image. The target image can be referred to by 
+            the variable $T. In that case the generated image can be:
+            \list[ordered] {
+               { 
+                  A new image, in which case that target image is not modified and the new image 
+                  does not contain the meta information (as astrometry) of the target image. 
+                  In that case the target image is only a source image used to provide data and 
+                  image characteristics.
+               }
+               { 
+                  Applied directly to the target image after completed generation, 
+                  considering any masking for merging with the original. 
+                  In this case the meta information of the target image is preserved.
+               }
+            } % sub list
+         }
+
+         When applied to a preview, the image created is always in the preview, even if a new image is requested.
+         This is useful to test your PixelMath instance without creating a new image on the workspace.
+
+      } % list
+      An exception to PixelMath's standard operation is its ability to accumulate values 
+      during calculation using global symbols and use them to generate pixels or display a 
+      total in the console. 
+      To ensure previsible results when using global values to generate output pixels,
+      you must disable multi-threading  by the option \e{Single threaded}.
+      This ensures that the pixels are calculated from left to right (increasing x)
+      then top to bottom (increasing y).
+   } % subsection Mode of operations
+
+   \subsection  {Numerical values}
+   {
+      % Pixel values are doubles.  0 is false, all other are true.  Pixel have 3 values + position
+      % They are also used for reference to values
+
+      All calculations are done in double floating point values. 
+      Pixels from source images are transformed to values from 0.0 up to 1.0, 
+      whatever the original image format (float or integer).
+      Intermediate values can be outside that range.
+      When stored in the destination image, the values are either truncated (by default)
+      or rescaled (option \e{Rescale result}) to the range 0.0 to 1.0.
+
+      As an exception, bitwise operators operate on the 32 bit integer values resulting 
+      of the truncation of their parameters to an integer.
+      In logical operations, a value of 0 is \e{false} and non zero values are \e{true}.
+      The operations result in either 0 or 1.
+
+      When stored in the destination image, the result is properly converted to the format of the destination image.
+   } %subsection Numerical values
+
+   \subsection {Image size and pixel coordinates}
+   {    
+   % Image pixel access: PixelMathInstance.cpp - 544, 
+   % see also 285 and  Pixel.h
+   %                                  if ( I->IsInterpolated() )
+   %                                  {
+   %                                     double fx = double( xPos )*I->Image()->Width()/m_data.w0;
+   %                                     double fy = double( yPos )*I->Image()->Height()/m_data.h0;
+   %                                     GetPixel( *sp, *I, fx, fy, m_data.channel );
+   %                                  }
+   %                                  else
+   %                                     GetPixel( *sp, *I, xPos, yPos, m_data.channel );
+   
+      The expressions are calculated for all pixels of the destination image.
+      In the expression you can acces the coordinates of the currently calculated pixel
+      and used that coordinates to control execution or to refer pixels in source images.
+      There are two methods to access the coordinates:
+      \list[ordered] {
+         { 
+            \s{Absolute: } The functions \s\c{x()} and \s\c{y()} return the integer coordinate 
+            of the destination pixel, between 0 and the width-1 or height-1 of the destination image.
+         }
+         { 
+            \s{Relative: } he functions \s\c{X()} and \s\c{Y()} return the relative coordinate 
+            of the destination pixel between 0 and 1, independently of the size of the image.
+         }
+      } % list
+      If you refer to an image by its identifier or meta name ($T, $A or $M), then the pixel at the
+      same relative position as the target will be used. 
+      You can therefore assemble pixels from different image sizes, although this may distord the Image
+      if they do not have the same aspect ratio. 
+
+      You can also copy proportionaly using 
+      \c\s{pixel(source,X()*width(source),Y()*height(source))}.
+
+      These two methods give slightly different results and the interpolation rules are not obvious.
+      Except in spacial case, you should attempt to combine images of the same size.
+
+      If you use the function \c\s{pixel(source, x(), y())}, then you copy from the same absolute
+      pixel location as the target. If the pixel does not exists, its value is assumed to be 0.
+
+   } % subsection Images size
+
+   %% Pixel channel when coyping images
+
+} %introduction
+
+\usage {
+
+   PixelMath in PixInsight is controlled through two windows: 
+   the main window and the optional expression editor, 
+   which offers additional features for writing expressions.
+
+   \subsection  {Main window}
+   {
+      When using PixelMath, the first step is to determine the mode of operation:
+
+      \list[unordered] {
+         { 
+            \s{color mode:} By default, PixelMath uses a single RGB/K expression. 
+            This expression is applied to each RGB channel in color images 
+            or to the single channel of a monochrome image. 
+            To enable separate RGB calculations, uncheck the "Use a single RGB/K expression" option. 
+            This also activates the Alpha channel, 
+            although you don't need to write an expression for it (it defaults to 0).
+         }
+         { 
+            \s{image destination:} By default, the calculated image is applied to a target image.
+            If you prefer to create a new image instead, select the "Create new image" option. 
+            By default, the characteristics of the target image 
+            (which essentially serves as a source image) are used. 
+            Alternatively, you can specify the characteristics of the new image 
+            or completely disable image generation. 
+            One of these options must be selected to execute PixelMath globally.
+         }
+      } %list
+
+      \center \image[size:70\%]  PM-default.png
+
+      The other options are clarified by tool tips.
+
+      There are fours tabs for containing expressions, 
+      along with one tab dedicated to symbol definitions 
+      and another tab that provides a read-only overview of the calculations.
+   } %subsection
+
+
+%% Destination image: see PixelMathInstance.cpp around 1625
+%     /*
+%       * Generate an output image or use the target view, as appropriate
+%       * depending on instance parameters.
+%       *
+%       * If createNewImage is enabled and we are executing on a preview, we use
+%       * the preview for output instead of creating a new image window. This is
+%       * a very useful although somewhat counterintuitive feature, which some
+%       * users interpret as a bug - alas, this is PixInsight, so complexity is
+%       * always welcome.
+%       *
+%       * If use64BitWorkingImage is enabled but the target image provides an
+%       * inferior sample format, we cannot use it so we'll have to use a
+%       * temporary working image, which we'll create after this block.
+%       *
+%       * If we are not generating output pixels, always use the target view
+%       * directly, even if it is a preview.
+%       */
+
+% See 1713 - scale or bound
+
+
+   \subsection  {Expression window}
+      {
+      Expressions can be entered directly into the corresponding tabs of the main window. 
+      However, utilizing the Expression Editor is much simpler, 
+      as it offers assistance with syntax elements, functions, operators, symbols, and other elements.
+
+      \center \image[size:80\%]  ExprEdit-ex1.png
+      
+      \subsection  {Expression syntax}
+      {
+         Expressions consist of:
+         \list[unordered] {
+            { Numeric values (e.g., 0.0, 0.5) }
+            { Operators (e.g., +, ~) }
+            { Image identifiers }
+            { Meta identifiers, such as $T, $M, $A }
+            { Function calls with scalar or image parameters (e.g., sqrt()) }
+            { Channel selectors, denoted by \[0\], following an image }
+            { Subexpressions enclosed in parentheses }
+         }
+
+         When multiple expressions are needed, each expression, except the last one, 
+         assigns its result to a user-defined symbol. 
+         Expressions must be separated by a semi-colon to avoid the error message 
+         "Disassociated subexpressions."
+
+         While entering an expression, you may double clic on an image refeference or one 
+         of the syntax elements (as functions and operators) to insert it in the 
+         currently edited expression instead of typing it.
+
+         The operator have precedence according to the following table. In case of doubt the use of parentheses is recommended.
+
+         \table[header,unnumbered] {
+            { { Level } { Operators } { Category } }
+            { { 0   } {\s\c{ () \[\] -> . :: ++ --            }} { Grouping } }
+            { { 1   } {\s\c{ ! ~ ++ -- - + * &                }} { Logical negation / sign change } }
+            { { 2   } {\s\c{ ^                                }} { Exponentiation } }
+            { { 3   } {\s\c{ * / \%                           }} { Multiplication, division, modulus } }
+            { { 4   } {\s\c{ + -                              }} { Addition and subtraction } }
+            { { 5   } {\s\c{                                  }} { \e{reserved} } }
+            { { 6   } {\s\c{ < <= > >=                        }} { Comparisons: less-than, ... } }
+            { { 7   } {\s\c{ ==  !=                           }} { Comparisons: equal and not equal } }
+            { { 8   } {\s\c{ &                                }} { Bitwise AND } }
+            { { 9   } {\s\c{ ^                                }} { Bitwise exclusive OR } }
+            { {  10 } {\s\c{   |                              }} { Bitwise inclusive (normal) OR } }
+            { {  11 } {\s\c{   &&                             }} { Logical AND } }
+            { {  12 } {\s\c{   ||                             }} { Logical OR } }
+            { {  13 } {\s\c{   = += -= *= /= \%= &= ^= <<= >>= }} { Assignment operators } }
+         }\s
+
+         Expressions can be commented using // for en of line comments or /* ... */  for multiline comments.
+         
+
+      } %subsection
+
+      \subsection  {Symbol definition syntax}
+      {
+         Symbol definitions are entered in the corresponding tag. They are separated from each other
+         by a comma. A symbol definition may be:
+            \list[unordered] {
+            { A name for a value that will be assigned in an intermediate expression. }
+            { A name with an initial value used as a parameter. }
+            { A name initialized by a symvol definition function. }
+            { A global variable initialization with an optiona default value. }
+          }
+          The name of a symbol must be identical to the name of a function without ambiguity,
+          a function call is always followed a parentheses.
+          
+
+      } %subsection
+
+      \subsection  {Image references}
+      {
+         Using an image identifier outside of a function expecting an image argument 
+         will utilize the pixel at the current relative location, 
+         with the current channel or the channel specified by \[channel\] (0 to 3 in RGBA order). 
+
+         The image identifiers can be meta identifiers $T (the target image of the process), $M (the
+         mask of the target image of the process) or $A (The active image in the workspace when
+         executing globally).
+
+         If the source image has the same size as the generated image, 
+         it will correspond to the same absolute position. 
+         Otherwise, it will correspond to the same relative position, 
+         allowing the combination of images of different sizes. 
+         The function "pixel(image, x, y)" permits the selection of a specific pixel within an image.
+      } %subsection
+   } %subsection Expression Window
+} % usage
+
+\section {Functions and operators} {
+   \subsection  {Functions}
+   {
+      The section \e{Envariant subexpression} specify in which case the function returns an invariant
+      value, that is a value that will be used for all pixels after the initial calculation. 
+      These expressions are more efficient than systematic recalculation.
+
+      \subsection {Control functions}
+       {
+            These functions are functional equivallent of conditional statements in imperative languages.
+            They select one expression to evaluate and return the value of thar expression.
+
+           %%INSERT FUNCTIONS iif,iswitch
+%%START-INSERTED
+%% BEWARE - Text up to %%END_INSERTED is generated automatically from C++ source files.
+%% Do not update manually !
+      \definition {
+         iif
+         {
+         \c\s{iif( cond, expr_true, expr_false )}
+
+         Conditional function (or \e{inline if} function):
+
+\list[unordered] {{Returns \e{expr_true} if \e{cond} evaluates to nonzero.}{Returns \e{expr_false} if \e{cond} evaluates to zero.}}\e{Invariant subexpression}: When each of the three arguments is either an immediate numeric value or an invariant subexpression.
+
+         }
+         iswitch
+         {
+         \c\s{iswitch( cond_1, expr_1\[, cond_2, expr_2\[, ..., cond_n, expr_n\]\], expr_default )}
+
+         Multiple conditional function (or \e{inline switch} function):
+
+\list[unordered] {{Returns \e{expr_1} if \e{cond_1} evaluates to nonzero;}{otherwise, returns \e{expr_2} if \e{cond_2} evaluates to nonzero;\n
+...}{otherwise, returns \e{expr_n} if \e{cond_n} evaluates to nonzero;}{otherwise, if all \e{cond_i} evaluate to zero (1 \le{} \e{i} \le{} n), returns \e{expr_default}.}}\e{Invariant subexpression}: When all specified arguments are either immediate numeric values or invariant subexpressions.
+
+         }
+      }
+%%END_INSERTED
+       }
+
+       \subsection {Math functions}
+       {
+         Common mathemaical functions
+           %%INSERT FUNCTIONS abs,ceil,exp,floor,frac,ln,log,log2,max,min,mod,mtf,norm,pi,range,rescale,round,sign,sqrt,ssqr,sum,trunc
+%%START-INSERTED
+%% BEWARE - Text up to %%END_INSERTED is generated automatically from C++ source files.
+%% Do not update manually !
+      \definition {
+         abs
+         {
+         \c\s{abs( x )}
+
+       Aliases: \s\c{Abs}
+
+         Absolute value of \e{x}.
+
+\e{Invariant subexpression}: When the argument \e{x} is either an immediate numeric value or an invariant subexpression.
+
+         }
+         ceil
+         {
+         \c\s{ceil( x )}
+
+       Aliases: \s\c{Ceil}
+
+         Lowest integer greater than or equal to \e{x}.
+
+\e{Invariant subexpression}: When the argument \e{x} is either an immediate numeric value or an invariant subexpression.
+
+         }
+         exp
+         {
+         \c\s{exp( x )}
+
+       Aliases: \s\c{Exp}
+
+         Exponential function \e{e}\sup{\e{x}}, where \e{e}=2.71828...
+
+\e{Invariant subexpression}: When the argument \e{x} is either an immediate numeric value or an invariant subexpression.
+
+         }
+         floor
+         {
+         \c\s{floor( x )}
+
+       Aliases: \s\c{Floor}
+
+         Highest integer less than or equal to \e{x}.
+
+\e{Invariant subexpression}: When the argument \e{x} is either an immediate numeric value or an invariant subexpression.
+
+         }
+         frac
+         {
+         \c\s{frac( x )}
+
+       Aliases: \s\c{Frac}
+
+         Fractional part of \e{x} in the range (\minus{}1,+1).
+
+\e{Invariant subexpression}: When the argument \e{x} is either an immediate numeric value or an invariant subexpression.
+
+         }
+         ln
+         {
+         \c\s{ln( x )}
+
+       Aliases: \s\c{Ln}
+
+         Natural logarithm of \e{x}, or base-\e{e} logarithm, where \e{e}=2.71828...
+
+\e{Invariant subexpression}: When the argument \e{x} is either an immediate numeric value or an invariant subexpression.
+
+         }
+         log
+         {
+         \c\s{log( x )}
+
+       Aliases: \s\c{log10, Log10, Log}
+
+         Base-10 logarithm of \e{x}.
+
+\e{Invariant subexpression}: When the argument \e{x} is either an immediate numeric value or an invariant subexpression.
+
+         }
+         log2
+         {
+         \c\s{log2( x )}
+
+       Aliases: \s\c{Log2}
+
+         Base-2 logarithm of \e{x}.
+
+\e{Invariant subexpression}: When the argument \e{x} is either an immediate numeric value or an invariant subexpression.
+
+         }
+         max
+         {
+         \c\s{max( a, b\[, ...\] )\n
+max( image\[, x0, y0, w, h\] )}
+
+       Aliases: \s\c{Max, maximum}
+
+         Maximum function:
+
+\list[ordered] {{Maximum value of a set of two or more arguments.}{Maximum pixel sample value in the specified image.}}In the second form, the optional \e{x0}, \e{y0}, \e{w}, and \e{h} parameters define a rectangular region of interest (ROI). These parameters are, respectively, the left coordinate, the top coordinate, the width and the height of the ROI, all of them expressed in integer pixel units. If a ROI is specified, the maximum pixel sample value will be computed exclusively for pixel samples within the intersection between the ROI and the image bounds. If no ROI is specified, the maximum pixel sample value will be computed for the entire image.
+
+\e{Invariant subexpression}: When the first argument is an image reference with optional scalar ROI coordinates (second form).
+
+         }
+         min
+         {
+         \c\s{min( a, b\[, ...\] )\n
+min( image\[, x0, y0, w, h\] )}
+
+       Aliases: \s\c{Min, minimum}
+
+         Minimum function:
+
+\list[ordered] {{Minimum value of a set of two or more arguments.}{Minimum pixel sample value in the specified image.}}In the second form, the optional \e{x0}, \e{y0}, \e{w}, and \e{h} parameters define a rectangular region of interest (ROI). These parameters are, respectively, the left coordinate, the top coordinate, the width and the height of the ROI, all of them expressed in integer pixel units. If a ROI is specified, the minimum pixel sample value will be computed exclusively for pixel samples within the intersection between the ROI and the image bounds. If no ROI is specified, the minimum pixel sample value will be computed for the entire image.
+
+\e{Invariant subexpression}: When the first argument is an image reference with optional scalar ROI coordinates (second form).
+
+         }
+         mod
+         {
+         \c\s{mod( a, b\[, ...\] )\n
+mod( image\[, x0, y0, w, h\] )}
+
+       Aliases: \s\c{modulus, Mod, Modulus}
+
+         Modulus, or the sum of absolute values:
+
+\list[ordered] {{Modulus of a set of two or more arguments.}{Modulus of the pixel samples in the specified image.}}In the second form, the optional \e{x0}, \e{y0}, \e{w}, and \e{h} parameters define a rectangular region of interest (ROI). These parameters are, respectively, the left coordinate, the top coordinate, the width and the height of the ROI, all of them expressed in integer pixel units. If a ROI is specified, the modulus will be computed exclusively for pixel samples within the intersection between the ROI and the image bounds. If no ROI is specified, the modulus will be computed for the entire image.
+
+\e{Invariant subexpression}: When the first argument is an image reference with optional scalar ROI coordinates (second form).
+
+         }
+         mtf
+         {
+         \c\s{mtf( m, x )}
+
+       Aliases: \s\c{MTF}
+
+         Midtones Transfer Function (MTF) of \e{x} for a midtones balance parameter \e{m}, 0 \le{} \e{m} \le{} 1.
+
+\e{Invariant subexpression}: When the argument \e{x} is either an immediate numeric value or an invariant subexpression.
+
+         }
+         norm
+         {
+         \c\s{norm( a, b\[, ...\] )\n
+norm( image\[, x0, y0, w, h\] )}
+
+       Aliases: \s\c{Norm}
+
+         Norm, or the sum of values:
+
+\list[ordered] {{Norm of a set of two or more arguments.}{Norm of the pixel samples in the specified image.}}In the second form, the optional \e{x0}, \e{y0}, \e{w}, and \e{h} parameters define a rectangular region of interest (ROI). These parameters are, respectively, the left coordinate, the top coordinate, the width and the height of the ROI, all of them expressed in integer pixel units. If a ROI is specified, the norm will be computed exclusively for pixel samples within the intersection between the ROI and the image bounds. If no ROI is specified, the norm will be computed for the entire image.
+
+\e{Invariant subexpression}: When the first argument is an image reference with optional scalar ROI coordinates (second form).
+
+         }
+         pi
+         {
+         \c\s{pi()}
+
+       Aliases: \s\c{Pi, PI}
+
+         The constant \pi{} = 3.141592...
+
+\e{Invariant subexpression}: always.
+
+         }
+         range
+         {
+         \c\s{range( x, a, b )}
+
+         \e{x} constrained to the \[\e{a},\e{b}\] range:
+
+\list[unordered] {{Returns \e{x} if \e{x} \ge{} \e{a} and \e{x} \le{} \e{b}}{Returns \e{a} if \e{x} < \e{a}}{Returns \e{b} if \e{x} > \e{b}}}\e{Invariant subexpression}: When each of the three arguments is either an immediate numeric value or an invariant subexpression.
+
+         }
+         rescale
+         {
+         \c\s{rescale( x, a, b )}
+
+         \e{x} rescaled linearly from the \[\e{a},\e{b}\] range to \[0,1\]:
+
+\list[unordered] {{Returns 0 if \e{x} < \e{a} or \e{b} \minus{} \e{a} is zero or insignificant.}{Returns 1 if \e{x} > \e{b}}{Returns (\e{x} \minus{} \e{a})/(\e{b} \minus{} \e{a}) if \e{x} \ge{} \e{a} and \e{x} \le{} \e{b}}}If \e{b} < \e{a}, \e{a} and \e{b} are exchanged prior to evaluation.
+
+\e{Invariant subexpression}: When each of the three arguments is either an immediate numeric value or an invariant subexpression.
+
+         }
+         round
+         {
+         \c\s{round( x\[, n=0\] )}
+
+       Aliases: \s\c{Round}
+
+         Result of \e{x} rounded to \e{n} decimal digits, \e{n} \ge{} 0.
+
+\e{Invariant subexpression}: When the argument \e{x} is either an immediate numeric value or an invariant subexpression.
+
+         }
+         sign
+         {
+         \c\s{sign( x )}
+
+       Aliases: \s\c{Sign}
+
+         Sign of \e{x}:
+
+\list[unordered] {{+1 if \e{x} > 0}{\minus{}1 if \e{x} < 0}{\wh{}0 if \e{x} = 0.}}\e{Invariant subexpression}: When the argument \e{x} is either an immediate numeric value or an invariant subexpression.
+
+         }
+         sqrt
+         {
+         \c\s{sqrt( x )}
+
+       Aliases: \s\c{Sqrt}
+
+         Square root of \e{x}.
+
+\e{Invariant subexpression}: When the argument \e{x} is either an immediate numeric value or an invariant subexpression.
+
+         }
+         ssqr
+         {
+         \c\s{ssqr( a, b\[, ...\] )\n
+ssqr( image\[, x0, y0, w, h\] )}
+
+       Aliases: \s\c{sumOfSquares, SumOfSquares}
+
+         Sum of squares:
+
+\list[ordered] {{Sum of the squares of a set of two or more arguments.}{Sum of the squared pixel sample values in the specified image.}}In the second form, the optional \e{x0}, \e{y0}, \e{w}, and \e{h} parameters define a rectangular region of interest (ROI). These parameters are, respectively, the left coordinate, the top coordinate, the width and the height of the ROI, all of them expressed in integer pixel units. If a ROI is specified, the sum of squares will be computed exclusively for pixel samples within the intersection between the ROI and the image bounds. If no ROI is specified, the sum of squares will be computed for the entire image.
+
+\e{Invariant subexpression}: When the first argument is an image reference with optional scalar ROI coordinates (second form).
+
+         }
+         sum
+         {
+         \c\s{sum( a, b\[, ...\] )}
+
+       Aliases: \s\c{Sum}
+
+         Summation of a set of two or more arguments.
+
+         }
+         trunc
+         {
+         \c\s{trunc( x )}
+
+       Aliases: \s\c{Trunc}
+
+         Truncated integer part of \e{x}.
+
+\e{Invariant subexpression}: When the argument \e{x} is either an immediate numeric value or an invariant subexpression.
+
+         }
+      }
+%%END_INSERTED
+       }
+
+       \subsection {Trigonometric functions}
+       {
+            Trigonometric functions in radian when applicable
+           %%INSERT FUNCTIONS acos,acosh,asin,asinh,atan,atanh,cos,cosh,sin,sinh,tan,tanh
+%%START-INSERTED
+%% BEWARE - Text up to %%END_INSERTED is generated automatically from C++ source files.
+%% Do not update manually !
+      \definition {
+         acos
+         {
+         \c\s{acos( x )}
+
+       Aliases: \s\c{ArcCos}
+
+         Arc cosine of \e{x}.
+
+\e{Invariant subexpression}: When the argument \e{x} is either an immediate numeric value or an invariant subexpression.
+
+         }
+         acosh
+         {
+         \c\s{acosh( x )}
+
+       Aliases: \s\c{ArcCosh}
+
+         Hyperbolic arc cosine of \e{x}.
+
+\e{Invariant subexpression}: When the argument \e{x} is either an immediate numeric value or an invariant subexpression.
+
+         }
+         asin
+         {
+         \c\s{asin( x )}
+
+       Aliases: \s\c{ArcSin}
+
+         Arc sine of \e{x}.
+
+\e{Invariant subexpression}: When the argument \e{x} is either an immediate numeric value or an invariant subexpression.
+
+         }
+         asinh
+         {
+         \c\s{asinh( x )}
+
+       Aliases: \s\c{ArcSinh}
+
+         Hyperbolic arc sine of \e{x}.
+
+\e{Invariant subexpression}: When the argument \e{x} is either an immediate numeric value or an invariant subexpression.
+
+         }
+         atan
+         {
+         \c\s{atan( y\[, x=1\] )}
+
+       Aliases: \s\c{ArcTan}
+
+         Arc tangent of \e{y}/\e{x}.
+
+\e{Invariant subexpression}: When the argument \e{x} is either an immediate numeric value or an invariant subexpression.
+
+         }
+         atanh
+         {
+         \c\s{atanh( x )}
+
+       Aliases: \s\c{ArcTanh}
+
+         Hyperbolic arc tangent of \e{x}.
+
+\e{Invariant subexpression}: When the argument \e{x} is either an immediate numeric value or an invariant subexpression.
+
+         }
+         cos
+         {
+         \c\s{cos( x )}
+
+       Aliases: \s\c{Cos}
+
+         Cosine of \e{x}.
+
+\e{Invariant subexpression}: When the argument \e{x} is either an immediate numeric value or an invariant subexpression.
+
+         }
+         cosh
+         {
+         \c\s{cosh( x )}
+
+       Aliases: \s\c{Cosh}
+
+         Hyperbolic cosine of \e{x}.
+
+\e{Invariant subexpression}: When the argument \e{x} is either an immediate numeric value or an invariant subexpression.
+
+         }
+         sin
+         {
+         \c\s{sin( x )}
+
+       Aliases: \s\c{Sin}
+
+         Sine of \e{x}.
+
+\e{Invariant subexpression}: When the argument \e{x} is either an immediate numeric value or an invariant subexpression.
+
+         }
+         sinh
+         {
+         \c\s{sinh( x )}
+
+       Aliases: \s\c{Sinh}
+
+         Hyperbolic sine of \e{x}.
+
+\e{Invariant subexpression}: When the argument \e{x} is either an immediate numeric value or an invariant subexpression.
+
+         }
+         tan
+         {
+         \c\s{tan( x )}
+
+       Aliases: \s\c{Tan}
+
+         Tangent of \e{x}.
+
+\e{Invariant subexpression}: When the argument \e{x} is either an immediate numeric value or an invariant subexpression.
+
+         }
+         tanh
+         {
+         \c\s{tanh( x )}
+
+       Aliases: \s\c{Tanh}
+
+         Hyperbolic tangent of \e{x}.
+
+\e{Invariant subexpression}: When the argument \e{x} is either an immediate numeric value or an invariant subexpression.
+
+         }
+      }
+%%END_INSERTED
+       }
+
+       \subsection {Statistic functions}
+       {
+            Statistic functions and random number generation
+           %%INSERT FUNCTIONS adev,bwmv,chisq,gamma,gauss,maxdev,mdev,mean,med,ostat,pbmv,poisson,Qn,random,rndselect,sdev,Sn,studentt,var
+%%START-INSERTED
+%% BEWARE - Text up to %%END_INSERTED is generated automatically from C++ source files.
+%% Do not update manually !
+      \definition {
+         adev
+         {
+         \c\s{adev( a, b\[, ...\] )\n
+adev( image\[, x0, y0, w, h\] )}
+
+       Aliases: \s\c{avgDev, AvgDev}
+
+         Average absolute deviation from the median (ADEV):
+
+\list[ordered] {{ADEV of a set of two or more arguments.}{ADEV of the specified image.}}In the second form, the optional \e{x0}, \e{y0}, \e{w}, and \e{h} parameters define a rectangular region of interest (ROI). These parameters are, respectively, the left coordinate, the top coordinate, the width and the height of the ROI, all of them expressed in integer pixel units. If a ROI is specified, the ADEV will be computed exclusively for pixel samples within the intersection between the ROI and the image bounds. If no ROI is specified, the ADEV will be computed for the entire image.
+
+The returned value is the ADEV multiplied by 1.2533 in order to make the scale estimate consistent with the standard deviation of a normal distribution.
+
+\e{Invariant subexpression}: When the first argument is an image reference with optional scalar ROI coordinates (second form).
+
+         }
+         bwmv
+         {
+         \c\s{bwmv( a, b\[, ...\] )\n
+bwmv( image\[, x0, y0, w, h\] )}
+
+       Aliases: \s\c{BWMV, biweightMidvariance}
+
+         Biweight midvariance (BWMV):
+
+\list[ordered] {{BWMV of a set of two or more arguments.}{BWMV of the specified image.}}In the second form, the optional \e{x0}, \e{y0}, \e{w}, and \e{h} parameters define a rectangular region of interest (ROI). These parameters are, respectively, the left coordinate, the top coordinate, the width and the height of the ROI, all of them expressed in integer pixel units. If a ROI is specified, the BWMV will be computed exclusively for pixel samples within the intersection between the ROI and the image bounds. If no ROI is specified, the BWMV will be computed for the entire image.
+
+\e{Invariant subexpression}: When the first argument is an image reference with optional scalar ROI coordinates (second form).
+
+         }
+         chisq
+         {
+         \c\s{chisq( k )}
+
+       Aliases: \s\c{ChiSquare}
+
+         Random deviate from a chi squared distribution with the specified degrees of freedom \e{k} > 0.
+
+         }
+         gamma
+         {
+         \c\s{gamma( k\[, t=1\] )}
+
+       Aliases: \s\c{Gamma}
+
+         Random deviate from a Gamma distribution with the specified shape and scale parameters, \e{k} and \e{t} respectively.
+
+If not specified, the default scale is \e{t} = 1.0.
+
+         }
+         gauss
+         {
+         \c\s{gauss()}
+
+       Aliases: \s\c{Gauss}
+
+         Normal (Gaussian) random deviate with zero mean and unit standard deviation.
+
+A typical application of this function to add normal distributed noise to the target image is:
+
+$T + k*mdev( $T )*gauss()
+
+where the median absolute deviation from the median (MAD), multiplied by an optional amplitude parameter \e{k}, defines the standard deviation of additive noise adaptively.
+
+         }
+         maxdev
+         {
+         \c\s{maxdev( a, b, c\[, ...\] )}
+
+       Aliases: \s\c{maxDev, MaxDev}
+
+         Maximum absolute deviation of a set of three or more arguments.
+
+         }
+         mdev
+         {
+         \c\s{mdev( a, b\[, ...\] )\n
+mdev( image\[, x0, y0, w, h\] )}
+
+       Aliases: \s\c{MAD, medDev, MedDev}
+
+         Median absolute deviation from the median (MAD):
+
+\list[ordered] {{MAD of a set of two or more arguments.}{MAD of the specified image.}}In the second form, the optional \e{x0}, \e{y0}, \e{w}, and \e{h} parameters define a rectangular region of interest (ROI). These parameters are, respectively, the left coordinate, the top coordinate, the width and the height of the ROI, all of them expressed in integer pixel units. If a ROI is specified, the MAD will be computed exclusively for pixel samples within the intersection between the ROI and the image bounds. If no ROI is specified, the MAD will be computed for the entire image.
+
+The returned value is the MAD multiplied by 1.4826 in order to make the scale estimate consistent with the standard deviation of a normal distribution.
+
+\e{Invariant subexpression}: When the first argument is an image reference with optional scalar ROI coordinates (second form).
+
+         }
+         mean
+         {
+         \c\s{mean( a, b\[, ...\] )\n
+mean( image\[, x0, y0, w, h\] )}
+
+       Aliases: \s\c{avg, Avg}
+
+         Arithmetic mean function:
+
+\list[ordered] {{Arithmetic mean of a set of two or more arguments.}{Arithmetic mean of the specified image.}}In the second form, the optional \e{x0}, \e{y0}, \e{w}, and \e{h} parameters define a rectangular region of interest (ROI). These parameters are, respectively, the left coordinate, the top coordinate, the width and the height of the ROI, all of them expressed in integer pixel units. If a ROI is specified, the arithmetic mean will be computed exclusively for pixel samples within the intersection between the ROI and the image bounds. If no ROI is specified, the arithmetic mean will be computed for the entire image.
+
+\e{Invariant subexpression}: When the first argument is an image reference with optional scalar ROI coordinates (second form).
+
+         }
+         med
+         {
+         \c\s{med( a, b, c\[, ...\] )\n
+med( image\[, x0, y0, w, h\] )}
+
+       Aliases: \s\c{Med, median}
+
+         Median function:
+
+\list[ordered] {{Median value of a set of three or more scalar arguments.}{Median pixel sample value of the specified image.}}In the second form, the optional \e{x0}, \e{y0}, \e{w}, and \e{h} parameters define a rectangular region of interest (ROI). These parameters are, respectively, the left coordinate, the top coordinate, the width and the height of the ROI, all of them expressed in integer pixel units. If a ROI is specified, the median pixel sample value will be computed exclusively for pixel samples within the intersection between the ROI and the image bounds. If no ROI is specified, the median pixel sample value will be computed for the entire image.
+
+\e{Invariant subexpression}: When the first argument is an image reference with optional scalar ROI coordinates (second form).
+
+         }
+         ostat
+         {
+         \c\s{ostat( k, a, b, c\[, ...\] )\n
+ostat( k, image\[, x0, y0, w, h\] )}
+
+         Order statistic function:
+
+\list[ordered] {{The \e{k}th order statistic of a set of three or more scalar arguments.}{The \e{k}th order statistic of the specified image.}}The order \e{k} is expected to be expressed in the \[0,1\] range, where 0 represents the first order statistic (or the minimum value of the sample) and 1 the last order statistic (or the maximum value of the sample). \e{k}=0.5 corresponds to the median value of the sample.
+
+In the second form, the optional \e{x0}, \e{y0}, \e{w}, and \e{h} parameters define a rectangular region of interest (ROI). These parameters are, respectively, the left coordinate, the top coordinate, the width and the height of the ROI, all of them expressed in integer pixel units. If a ROI is specified, the order statistic will be computed exclusively for pixel samples within the intersection between the ROI and the image bounds. If no ROI is specified, the order statistic will be computed for the entire image.
+
+\e{Invariant subexpression}: When the second argument is an image reference with optional scalar ROI coordinates (second form).
+
+         }
+         pbmv
+         {
+         \c\s{pbmv( a, b\[, ...\] )\n
+pbmv( image\[, x0, y0, w, h\] )}
+
+       Aliases: \s\c{PBMV, bendMidvariance}
+
+         Percentage bend midvariance (PBMV):
+
+\list[ordered] {{PBMV of a set of two or more arguments.}{PBMV of the specified image.}}In the second form, the optional \e{x0}, \e{y0}, \e{w}, and \e{h} parameters define a rectangular region of interest (ROI). These parameters are, respectively, the left coordinate, the top coordinate, the width and the height of the ROI, all of them expressed in integer pixel units. If a ROI is specified, the PBMV will be computed exclusively for pixel samples within the intersection between the ROI and the image bounds. If no ROI is specified, the PBMV will be computed for the entire image.
+
+\e{Invariant subexpression}: When the first argument is an image reference with optional scalar ROI coordinates (second form).
+
+         }
+         poisson
+         {
+         \c\s{poisson( x )}
+
+       Aliases: \s\c{Poisson}
+
+         Random Poisson deviate for the specified pixel sample value \e{x}, which is expected to be in DN units.
+
+A typical application of this function is:
+
+poisson( 65535*$T )/65535
+
+which will generate Poisson noise for the current pixel value in the \[0,1\] range, simulating a 16-bit detector with unit gain.
+
+         }
+         Qn
+         {
+         \c\s{Qn( a, b\[, ...\] )\n
+Qn( image\[, x0, y0, w, h\] )}
+
+         Q\sub{n} scale estimate of Rousseeuw and Croux:
+
+\list[ordered] {{Q\sub{n} scale estimate for a set of two or more arguments.}{Q\sub{n} scale estimate for the specified image.}}In the second form, the optional \e{x0}, \e{y0}, \e{w}, and \e{h} parameters define a rectangular region of interest (ROI). These parameters are, respectively, the left coordinate, the top coordinate, the width and the height of the ROI, all of them expressed in integer pixel units. If a ROI is specified, the Q\sub{n} estimate will be computed exclusively for pixel samples within the intersection between the ROI and the image bounds. If no ROI is specified, the Q\sub{n} estimate will be computed for the entire image.
+
+The returned value is Q\sub{n} multiplied by 2.2191 in order to make the scale estimate consistent with the standard deviation of a normal distribution.
+
+\e{Invariant subexpression}: When the first argument is an image reference with optional scalar ROI coordinates (second form).
+
+         }
+         random
+         {
+         \c\s{random()}
+
+       Aliases: \s\c{Random, rnd}
+
+         Pseudo-random uniform deviate in the range \[0,1).
+
+The current implementation uses the xoshiro256** algorithm by David Blackman and Sebastiano Vigna.
+
+         }
+         rndselect
+         {
+         \c\s{rndselect( a, b\[, ...\] )}
+
+       Aliases: \s\c{RandomSelect}
+
+         Returns a randomly selected value among the set of arguments \{\e{a}, \e{b}, ...\}.
+
+         }
+         sdev
+         {
+         \c\s{sdev( a, b\[, ...\] )\n
+sdev( image\[, x0, y0, w, h\] )}
+
+       Aliases: \s\c{stdDev, StdDev}
+
+         Standard deviation:
+
+\list[ordered] {{Standard deviation of a set of two or more arguments.}{Standard deviation of the specified image.}}In the second form, the optional \e{x0}, \e{y0}, \e{w}, and \e{h} parameters define a rectangular region of interest (ROI). These parameters are, respectively, the left coordinate, the top coordinate, the width and the height of the ROI, all of them expressed in integer pixel units. If a ROI is specified, the standard deviation will be computed exclusively for pixel samples within the intersection between the ROI and the image bounds. If no ROI is specified, the standard deviation will be computed for the entire image.
+
+\e{Invariant subexpression}: When the first argument is an image reference with optional scalar ROI coordinates (second form).
+
+         }
+         Sn
+         {
+         \c\s{Sn( a, b\[, ...\] )\n
+Sn( image\[, x0, y0, w, h\] )}
+
+         S\sub{n} scale estimate of Rousseeuw and Croux:
+
+\list[ordered] {{S\sub{n} scale estimate for a set of two or more arguments.}{S\sub{n} scale estimate for the specified image.}}In the second form, the optional \e{x0}, \e{y0}, \e{w}, and \e{h} parameters define a rectangular region of interest (ROI). These parameters are, respectively, the left coordinate, the top coordinate, the width and the height of the ROI, all of them expressed in integer pixel units. If a ROI is specified, the S\sub{n} estimate will be computed exclusively for pixel samples within the intersection between the ROI and the image bounds. If no ROI is specified, the S\sub{n} estimate will be computed for the entire image.
+
+The returned value is S\sub{n} multiplied by 1.1926 in order to make the scale estimate consistent with the standard deviation of a normal distribution.
+
+\e{Invariant subexpression}: When the first argument is an image reference with optional scalar ROI coordinates (second form).
+
+         }
+         studentt
+         {
+         \c\s{studentt( n )}
+
+       Aliases: \s\c{StudentT}
+
+         Random deviate from a Student's t distribution with the specified degrees of freedom \e{n} > 0.
+
+         }
+         var
+         {
+         \c\s{var( a, b\[, ...\] )\n
+var( image\[, x0, y0, w, h\] )}
+
+       Aliases: \s\c{variance, Var}
+
+         Variance:
+
+\list[ordered] {{Variance of a set of two or more arguments.}{Variance of the specified image.}}In the second form, the optional \e{x0}, \e{y0}, \e{w}, and \e{h} parameters define a rectangular region of interest (ROI). These parameters are, respectively, the left coordinate, the top coordinate, the width and the height of the ROI, all of them expressed in integer pixel units. If a ROI is specified, the variance will be computed exclusively for pixel samples within the intersection between the ROI and the image bounds. If no ROI is specified, the variance will be computed for the entire image.
+
+\e{Invariant subexpression}: When the first argument is an image reference with optional scalar ROI coordinates (second form).
+
+         }
+      }
+%%END_INSERTED
+       }
+
+       \subsection {Image information functions}
+       {
+            Return information on the target or specified image
+           %%INSERT FUNCTIONS channels,height,iscolor,maxsample,minsample,pixel,width,x,X,y,Y
+%%START-INSERTED
+%% BEWARE - Text up to %%END_INSERTED is generated automatically from C++ source files.
+%% Do not update manually !
+      \definition {
+         channels
+         {
+         \c\s{channels( \[image=$T\] )\n
+n( \[image=$T\] )}
+
+       Aliases: \s\c{n, numberOfChannels, NumberOfChannels}
+
+         Number of channels in the specified image, including nominal and alpha channels.
+
+\e{Invariant subexpression}: always.
+
+         }
+         height
+         {
+         \c\s{height( \[image=$T\] )\n
+h( \[image=$T\] )}
+
+       Aliases: \s\c{h, Height}
+
+         Height in pixels of the specified image.
+
+\e{Invariant subexpression}: always.
+
+         }
+         iscolor
+         {
+         \c\s{iscolor( \[image=$T\] )}
+
+       Aliases: \s\c{isColor, IsColor}
+
+         Returns one if the specified image is in the RGB color space. Returns zero for a grayscale image.
+
+\e{Invariant subexpression}: always.
+
+         }
+         maxsample
+         {
+         \c\s{maxsample( image )}
+
+       Aliases: \s\c{maxSample, MaxSample}
+
+         The maximum pixel sample value in the current pixel of the specified image.
+
+         }
+         minsample
+         {
+         \c\s{minsample( image )}
+
+       Aliases: \s\c{minSample, MinSample}
+
+         The minimum pixel sample value in the current pixel of the specified image.
+
+         }
+         pixel
+         {
+         \c\s{pixel( image, x, y\[, c\] )\n
+p( image, x, y\[, c\] )}
+
+       Aliases: \s\c{p, Pixel}
+
+         Pixel sample value of the specified image at (\e{x},\e{y}) coordinates of channel \e{c}.
+
+If not specified, the default channel is the current channel corresponding to the running expression.
+
+         }
+         width
+         {
+         \c\s{width( \[image=$T\] )\n
+w( \[image=$T\] )}
+
+       Aliases: \s\c{w, Width}
+
+         Width in pixels of the specified image.
+
+\e{Invariant subexpression}: always.
+
+         }
+         x
+         {
+         \c\s{x()\n
+xpos()}
+
+       Aliases: \s\c{xpos, xPos, XPos}
+
+         Current horizontal (X-axis) coordinate in integer pixels.
+
+         }
+         X
+         {
+         \c\s{X()}
+
+         Current normalized horizontal (X-axis) coordinate in the \[0,1\] range, where 1 corresponds to w() \minus{} 1.
+
+         }
+         y
+         {
+         \c\s{y()\n
+ypos()}
+
+       Aliases: \s\c{ypos, yPos, YPos}
+
+         Current vertical (Y-axis) coordinate in integer pixels.
+
+         }
+         Y
+         {
+         \c\s{Y()}
+
+         Current normalized vertical (Y-axis) coordinate in the \[0,1\] range, where 1 corresponds to h() \minus{} 1.
+
+         }
+      }
+%%END_INSERTED
+       }
+
+       \subsection {Color functions}
+       {
+           %%INSERT FUNCTIONS CIEa,CIEb,CIEc,CIEh,CIEhd,CIEhr,CIEL,CIEX,CIEY,CIEZ,H,Hd,Hr,I,Si,Sv,V
+%%START-INSERTED
+%% BEWARE - Text up to %%END_INSERTED is generated automatically from C++ source files.
+%% Do not update manually !
+      \definition {
+         CIEa
+         {
+         \c\s{CIEa( image )}
+
+         Normalized CIE a* component of the current pixel in the specified image, in the range \[0,1).
+
+         }
+         CIEb
+         {
+         \c\s{CIEb( image )}
+
+         Normalized CIE b* component of the current pixel in the specified image, in the range \[0,1).
+
+         }
+         CIEc
+         {
+         \c\s{CIEc( image )}
+
+         Normalized CIE c* component of the current pixel in the specified image, in the range \[0,1).
+
+         }
+         CIEh
+         {
+         \c\s{CIEh( image )}
+
+         Normalized CIE h* component of the current pixel in the specified image, in the range \[0,1).
+
+         }
+         CIEhd
+         {
+         \c\s{CIEhd( image )}
+
+         CIE h* component of the current pixel in the specified image, expressed in degrees in the range \[0\deg,360\deg).
+
+         }
+         CIEhr
+         {
+         \c\s{CIEhr( image )}
+
+         CIE h* component of the current pixel in the specified image, expressed in radians in the range \[0,2\pi{}).
+
+         }
+         CIEL
+         {
+         \c\s{CIEL( image )}
+
+         Normalized CIE L* component of the current pixel in the specified image, in the range \[0,1).
+
+         }
+         CIEX
+         {
+         \c\s{CIEX( image )}
+
+         CIE X component of the current pixel in the specified image.
+
+         }
+         CIEY
+         {
+         \c\s{CIEY( image )}
+
+         CIE Y component of the current pixel in the specified image.
+
+         }
+         CIEZ
+         {
+         \c\s{CIEZ( image )}
+
+         CIE Z component of the current pixel in the specified image.
+
+         }
+         H
+         {
+         \c\s{H( image )}
+
+         Normalized hue angle of the current pixel in the specified image, in the range \[0,1).
+
+         }
+         Hd
+         {
+         \c\s{Hd( image )}
+
+         Hue angle of the current pixel in the specified image, expressed in degrees in the range \[0\deg,360\deg).
+
+         }
+         Hr
+         {
+         \c\s{Hr( image )}
+
+         Hue angle of the current pixel in the specified image, expressed in radians in the range \[0,2\pi{}).
+
+         }
+         I
+         {
+         \c\s{I( image )}
+
+         HSI intensity of the current pixel in the specified image.
+
+         }
+         Si
+         {
+         \c\s{Si( image )}
+
+         HSI saturation of the current pixel in the specified image.
+
+         }
+         Sv
+         {
+         \c\s{Sv( image )}
+
+         HSV saturation of the current pixel in the specified image.
+
+         }
+         V
+         {
+         \c\s{V( image )}
+
+         HSV value of the current pixel in the specified image.
+
+         }
+      }
+%%END_INSERTED
+       }
+
+       \subsection {Geometry functions}
+       {
+            Various distance and angle calculations
+           %%INSERT FUNCTIONS d2line,d2seg,inellipse,inrect,maxd2rect,mind2rect,pangle,rdist,xperp2line,yperp2line
+%%START-INSERTED
+%% BEWARE - Text up to %%END_INSERTED is generated automatically from C++ source files.
+%% Do not update manually !
+      \definition {
+         d2line
+         {
+         \c\s{d2line( x1, y1, x2, y2 )}
+
+       Aliases: \s\c{DistToLine}
+
+         Returns the distance from the current position to the line defined by two points (\e{x1},\e{y1}) and (\e{x2},\e{y2}).
+
+         }
+         d2seg
+         {
+         \c\s{d2seg( x1, y1, x2, y2 )}
+
+       Aliases: \s\c{DistToSegment}
+
+         Returns the distance from the current position to the line segment defined by two points (\e{x1},\e{y1}) and (\e{x2},\e{y2}).
+
+         }
+         inellipse
+         {
+         \c\s{inellipse( xc, yc, rx, ry )}
+
+       Aliases: \s\c{inEllipse, InEllipse}
+
+         Returns one if the current coordinates are included in the specified ellipse given by its center coordinates (\e{xc},\e{yc}), horizontal and vertical radii \e{rx} and \e{ry}, respectively. Returns zero otherwise.
+
+         }
+         inrect
+         {
+         \c\s{inrect( x0, y0, width, height )}
+
+       Aliases: \s\c{inRect, InRect}
+
+         Returns one if the current coordinates are inside the specified rectangular region given by its top-left corner coordinates (\e{x0},\e{y0}), \e{width} and \e{height} in pixels. Returns zero otherwise.
+
+         }
+         maxd2rect
+         {
+         \c\s{maxd2rect( x0, y0, width, height )}
+
+       Aliases: \s\c{MaxDistToRect}
+
+         Returns the maximum distance in pixels from the current coordinates to the specified rectangle given by its top-left corner coordinates (\e{x0},\e{y0}), \e{width} and \e{height} in pixels, when the current position is interior to the rectangular region. Returns \minus{}1 if the current position is exterior to the rectangular region.
+
+         }
+         mind2rect
+         {
+         \c\s{mind2rect( x0, y0, width, height )}
+
+       Aliases: \s\c{MinDistToRect}
+
+         Returns the minimum distance in pixels from the current coordinates to the specified rectangle given by its top-left corner coordinates (\e{x0},\e{y0}), \e{width} and \e{height} in pixels, when the current position is interior to the rectangular region. Returns \minus{}1 if the current position is exterior to the rectangular region.
+
+         }
+         pangle
+         {
+         \c\s{pangle( \[xc, yc\] )\n
+a( \[xc, yc\] )}
+
+       Aliases: \s\c{a, PAngle}
+
+         Current polar angle in radians, with respect to an arbitrary center point (\e{xc},\e{yc}).
+
+If not specified, the default center is the geometric center of the target image.
+
+         }
+         rdist
+         {
+         \c\s{rdist( \[xc, yc\] )\n
+r( \[xc, yc\] )}
+
+       Aliases: \s\c{r, RDist}
+
+         Current radial distance in pixels with respect to an arbitrary center point (\e{xc},\e{yc}).
+
+If not specified, the default center is the geometric center of the target image.
+
+         }
+         xperp2line
+         {
+         \c\s{xperp2line( x1, y1, x2, y2 )}
+
+       Aliases: \s\c{XPerpToLine}
+
+         Returns the X-coordinate of the intersection of the line through the current position perpendicular to the line defined by two points (\e{x1},\e{y1}) and (\e{x2},\e{y2}).
+
+         }
+         yperp2line
+         {
+         \c\s{yperp2line( x1, y1, x2, y2 )}
+
+       Aliases: \s\c{YPerpToLine}
+
+         Returns the Y-coordinate of the intersection of the line through the current position perpendicular to the line defined by two points (\e{x1},\e{y1}) and (\e{x2},\e{y2}).
+
+         }
+      }
+%%END_INSERTED
+       }
+
+       \subsection {Astronometry functions}
+       {
+            These functions required a resolved image
+           %%INSERT FUNCTIONS dec,ra,rra
+%%START-INSERTED
+%% BEWARE - Text up to %%END_INSERTED is generated automatically from C++ source files.
+%% Do not update manually !
+      \definition {
+         dec
+         {
+         \c\s{dec( image, x, y )}
+
+       Aliases: \s\c{Dec}
+
+         Declination equatorial coordinate calculated for the specified image at (\e{x},\e{y}) image coordinates. The returned value is expressed in degrees in the range \[-90,+90\].
+
+This function requires a valid astrometric solution available in the specified image.
+
+\s{Note:} Use of this function can lead to poor performance when executed on large images with spline-based astrometric solutions (for distortion correction) and slow machines with few processor cores.
+
+         }
+         ra
+         {
+         \c\s{ra( image, x, y )}
+
+       Aliases: \s\c{RA}
+
+         Right ascension equatorial coordinate calculated for the specified image at (\e{x},\e{y}) image coordinates. The returned value is expressed in degrees in the range \[0,360).
+
+This function requires a valid astrometric solution available in the specified image.
+
+\s{Note:} Use of this function can lead to poor performance when executed on large images with spline-based astrometric solutions (for distortion correction) and slow machines with few processor cores.
+
+         }
+         rra
+         {
+         \c\s{rra( image, x, y )}
+
+       Aliases: \s\c{RawRA}
+
+         Right ascension equatorial coordinate calculated for the specified image at (\e{x},\e{y}) image coordinates. The returned value is expressed in degrees and \u{\e{not constrained}} to a valid range of right ascensions.
+
+This function is useful for interpolation schemes where discontinuities caused by zero crossings in right ascension, i.e. abrupt changes from 360 to 0 degrees, are not admissible numerically. Right ascensions returned by this function can be larger than 360 degrees or less than zero, ensuring smooth transitions.
+
+This function requires a valid astrometric solution available in the specified image.
+
+\s{Note:} Use of this function can lead to poor performance when executed on large images with spline-based astrometric solutions (for distortion correction) and slow machines with few processor cores.
+
+         }
+      }
+%%END_INSERTED
+       }
+
+      
+
+       \subsection {Generators}
+       {
+           %%INSERT FUNCTIONS area,asqr,bconv,binarize,combine,dilation,erosion,gconv,hmirror,kconv,lvar,medfilt,normalize,rotate,translate,truncate,urotate,vmirror
+%%START-INSERTED
+%% BEWARE - Text up to %%END_INSERTED is generated automatically from C++ source files.
+%% Do not update manually !
+      \definition {
+         area
+         {
+         \c\s{area( \[image=$T\] )}
+
+       Aliases: \s\c{Area}
+
+         Area of the specified image in square pixels.
+
+\e{Invariant subexpression}: always.
+
+         }
+         asqr
+         {
+         \c\s{asqr( a, b\[, ...\] )\n
+asqr( image\[, x0, y0, w, h\] )}
+
+       Aliases: \s\c{meanOfSquares, MeanOfSquares}
+
+         Mean of squares:
+
+\list[ordered] {{Mean of the squares of a set of two or more arguments.}{Mean of the squared pixel sample values in the specified image.}}In the second form, the optional \e{x0}, \e{y0}, \e{w}, and \e{h} parameters define a rectangular region of interest (ROI). These parameters are, respectively, the left coordinate, the top coordinate, the width and the height of the ROI, all of them expressed in integer pixel units. If a ROI is specified, the mean of squares will be computed exclusively for pixel samples within the intersection between the ROI and the image bounds. If no ROI is specified, the mean of squares will be computed for the entire image.
+
+\e{Invariant subexpression}: When the first argument is an image reference with optional scalar ROI coordinates (second form).
+
+         }
+         bconv
+         {
+         \c\s{bconv( image\[, n=3\] )}
+
+         Convolution of the specified image with a box average filter of odd size \e{n} \ge{} 3.
+
+         }
+         binarize
+         {
+         \c\s{binarize( image\[, t=0.5\] )}
+
+         The specified image with its pixel sample values binarized with respect to the threshold value \e{t}.<p>For each pixel sample \e{v}, the corresponding binarized sample value \e{v'} is given by:
+
+\c{\wh{}\wh{}\wh{}\e{v'}\wh{}=\wh{}0\wh{}if\wh{}\e{v}\wh{}<\wh{}\e{t}\n
+\wh{}\wh{}\wh{}\e{v'}\wh{}=\wh{}1\wh{}if\wh{}\e{v}\wh{}\ge{}\wh{}\e{t}}
+
+         }
+         combine
+         {
+         \c\s{combine( image1, image2, op )}
+
+         Combination of two source operand images \e{image1} and \e{image2} with the specified binary operation \e{op}. Returns the result of \e{image1} \e{op} \e{image2}, which is a dynamically generated image.
+
+See the family of op_xxx() symbolic functions for the set of available binary image operators.
+
+         }
+         dilation
+         {
+         \c\s{dilation( image\[, n=3\[, str=str_square()\]\] )\n
+maxfilt( image\[, n=3\[, str=str_square()\]\] )}
+
+       Aliases: \s\c{maxfilt, maxfilter}
+
+         Dilation filter with odd filter size \e{n} \ge{} 3 and structuring element \e{str}, applied to the specified image.
+
+See the family of str_xxx() symbolic functions for the set of available structuring elements.
+
+         }
+         erosion
+         {
+         \c\s{erosion( image\[, n=3\[, str=str_square()\]\] )\n
+minfilt( image\[, n=3\[, str=str_square()\]\] )}
+
+       Aliases: \s\c{minfilt, minfilter}
+
+         Erosion filter with odd filter size \e{n} \ge{} 3 and structuring element \e{str}, applied to the specified image.
+
+See the family of str_xxx() symbolic functions for the set of available structuring elements.
+
+         }
+         gconv
+         {
+         \c\s{gconv( image\[, sigma=2\[, rho=1\[, theta=0\[, eps=0.01\]\]\]\] )}
+
+         Convolution of the specified image with an elliptical Gaussian filter:
+
+\list[unordered] {{\e{sigma}: Standard deviation of the filter distribution on its major axis (\e{sigma} > 0).\n
+}{\e{rho}: The ratio between the minor and major axes of the generated filter distribution (0 \le{} \e{rho} \le{} 1).\n
+}{\e{theta}: Rotation angle of the major filter axis in degrees (\minus{}180\deg \le{} \e{theta} \le{} 180\deg). Ignored when \e{rho} = 1.\n
+}{\e{eps}: Maximum truncation error of computed filter coefficients (\e{eps} > 0).}}         }
+         hmirror
+         {
+         \c\s{hmirror( image )}
+
+         Horizontal mirror (or horizontal reflection) of the specified image.
+
+         }
+         kconv
+         {
+         \c\s{kconv( image, k11, k12, k13, k21, k22, k23, k31, k32, k33\[, ...\] )}
+
+         Convolution of the specified image with a custom kernel filter.
+
+The arguments \e{k\sub{ij}} are filter kernel elements specified in row-major order. The minimum kernel size is 3\times{}3, hence at least 9 elements must be defined. For the smallest 3\times{}3 kernel we have the following filter configuration:
+
+\c{\wh{}\wh{}\wh{}k11\wh{}k12\wh{}k13\n
+\wh{}\wh{}\wh{}k21\wh{}k22\wh{}k23\n
+\wh{}\wh{}\wh{}k31\wh{}k32\wh{}k33}
+
+Filter kernels must be square matrices with odd dimensions, so valid kernel sizes are 3\times{}3, 5\times{}5, 7\times{}7, etc.
+
+         }
+         lvar
+         {
+         \c\s{lvar( image\[, d=3\[, k=krn_flat()\]\] )}
+
+         Local variance map of the specified image with odd window size \e{d} \ge{} 3 pixels and kernel function \e{k}.
+
+See the family of krn_xxx() symbolic functions for the set of available local variance kernels.
+
+A local variance map is a sensitive analysis tool to explore the distribution of pixel intensity variations at small scales. This allows for the implementation of subtle adaptive procedures with PixelMath. For example, the following expression:
+
+\c{\wh{}\wh{}\wh{}iif(\wh{}lvar(\wh{}$T,\wh{}7,\wh{}krn_gauss()\wh{})\wh{}<\wh{}t\n
+\wh{}\wh{}\wh{}\wh{}\wh{}\wh{}\wh{}\wh{},\wh{}medfilt(\wh{}$T,\wh{}5,\wh{}str_circular()\wh{})\n
+\wh{}\wh{}\wh{}\wh{}\wh{}\wh{}\wh{}\wh{},\wh{}$T\wh{})}
+
+applies a median filter selectively to pixels where the local variance is below a prescribed threshold \e{t}, which depends on the target image and must be found experimentally. For example, \e{t}=1e-8 can be a good starting value for a linear deep-sky image. The expression above implements a powerful noise reduction procedure. More sophisticated, adaptive noise filtering processes based on the same technique can be designed with iswitch() constructs.
+
+Local variance maps are always generated as 64-bit floating point images. This ensures that no truncation or roundoff errors will degrade their ability to represent subtle intensity variations, which is especially important for linear images.
+
+         }
+         medfilt
+         {
+         \c\s{medfilt( image\[, n=3\[, str=str_square()\]\] )}
+
+       Aliases: \s\c{medfilter}
+
+         Median filter with odd filter size \e{n} \ge{} 3 and structuring element \e{str}, applied to the specified image.
+
+See the family of str_xxx() symbolic functions for the set of available structuring elements.
+
+         }
+         normalize
+         {
+         \c\s{normalize( image\[, a=0, b=1\] )}
+
+         The specified image with its pixel sample values scaled linearly to the range \[\e{a},\e{b}\].
+
+For each pixel sample \e{v}, the corresponding normalized value \e{v}' is given by:
+
+\c{\wh{}\wh{}\wh{}\e{v}'\wh{}=\wh{}\e{a}\wh{}+\wh{}(\e{b}\wh{}-\wh{}\e{a})\times{}(\e{v}\wh{}-\wh{}\e{m})/(\e{M}\wh{}-\wh{}\e{m})}
+
+where \e{m} and \e{M} are, respectively, the minimum and maximum pixel sample values in the image before normalization.
+
+         }
+         rotate
+         {
+         \c\s{rotate( image, angle\[, cx=width()/2, cy=height()/2\] )}
+
+         Rotation of an image by the specified \e{angle} in degrees, with center of rotation located at (\e{cx},\e{cy}) image coordinates.
+
+If no center coordinates are specified, the default center of rotation is the geometric center of the image.
+
+         }
+         translate
+         {
+         \c\s{translate( image, dx, dy )}
+
+         Translation of an image by the specified increments \e{dx} and \e{dy}, respectively in the horizontal (X-axis) and vertical (Y-axis) directions.
+
+         }
+         truncate
+         {
+         \c\s{truncate( image\[, a=0, b=1\] )}
+
+         The specified image with its pixel sample values truncated to the range \[\e{a},\e{b}\].
+
+For each pixel sample \e{v}, the corresponding truncated sample value \e{v'} is given by:
+
+\c{\wh{}\wh{}\wh{}\e{v'}\wh{}=\wh{}\e{a}\wh{}if\wh{}\e{v}\wh{}<\wh{}\e{a}\n
+\wh{}\wh{}\wh{}\e{v'}\wh{}=\wh{}\e{b}\wh{}if\wh{}\e{v}\wh{}>\wh{}\e{b}\n
+\wh{}\wh{}\wh{}\e{v'}\wh{}=\wh{}\e{v}\wh{}if\wh{}\e{a}\wh{}\le{}\wh{}\e{v}\wh{}\le{}\wh{}\e{b}}
+
+         }
+         urotate
+         {
+         \c\s{urotate( image, angle )}
+
+         Unclipped rotation of an image by the specified \e{angle} in degrees.
+
+An unclipped rotation preserves the entire image without clipping any pixels. Unclipped rotations always rotate images with respect to their geometric centers. To accommodate all rotated pixels in the generated image, the unclipped rotated image can be smaller than the original one in PixelMath, except for the trivial cases of rotations by 0 and 180 degrees.
+
+         }
+         vmirror
+         {
+         \c\s{vmirror( image )}
+
+         Vertical mirror (or vertical reflection) of the specified image.
+
+         }
+      }
+%%END_INSERTED
+       }
+
+       \subsection {Combine operations}
+       {
+           %%INSERT FUNCTIONS op_add,op_atan2,op_color_burn,op_color_dodge,op_dif,op_div,op_exclusion,op_hard_light,op_linear_burn,op_linear_light,op_max,op_min,op_mov,op_mul,op_overlay,op_pin_light,op_pow,op_screen,op_soft_light,op_sub,op_vivid_light
+%%START-INSERTED
+%% BEWARE - Text up to %%END_INSERTED is generated automatically from C++ source files.
+%% Do not update manually !
+      \definition {
+         op_add
+         {
+         \c\s{op_add()}
+
+         Represents a pixel wise arithmetic addition operation for the combine() generator.
+
+\e{Invariant subexpression}: always.
+
+         }
+         op_atan2
+         {
+         \c\s{op_atan2()}
+
+         Represents a pixel wise arc tangent operation for the combine() generator.
+
+Given two images \e{X} and \e{Y}, the expression:
+
+\c{\wh{}\wh{}\wh{}combine(\wh{}Y,\wh{}X,\wh{}op_atan2()\wh{})}
+
+will generate an image where each pixel will be equal to the arc tangent of \e{y}/\e{x} in radians, in the range \[\minus{}\pi{},+\pi{}\], where \e{y} and \e{x} are, respectively, the corresponding pixels in the \e{Y} and \e{X} images.
+
+The signs of the arguments are used to determine the correct quadrant of the result. The generated image will be in 64-bit floating point format.
+
+\e{Invariant subexpression}: always.
+
+         }
+         op_color_burn
+         {
+         \c\s{op_color_burn()}
+
+         Represents a pixel wise \e{color burn} operation for the combine() generator.
+
+Given two images \e{a} and \e{b} with pixel sample values in the \[0,1\] range, the color burn operation is defined by the following expression:
+
+\c{\wh{}\wh{}\wh{}1\wh{}-\wh{}min(\wh{}(1\wh{}-\wh{}a)/b,\wh{}1\wh{})}
+
+\e{Invariant subexpression}: always.
+
+         }
+         op_color_dodge
+         {
+         \c\s{op_color_dodge()}
+
+         Represents a pixel wise \e{color dodge} operation for the combine() generator.
+
+Given two images \e{a} and \e{b} with pixel sample values in the \[0,1\] range, the color dodge operation is defined by the following expression:
+
+\c{\wh{}\wh{}\wh{}min(\wh{}a/(1\wh{}-\wh{}b),\wh{}1\wh{})}
+
+\e{Invariant subexpression}: always.
+
+         }
+         op_dif
+         {
+         \c\s{op_dif()}
+
+         Represents a pixel wise absolute difference operation for the combine() generator.
+
+\e{Invariant subexpression}: always.
+
+         }
+         op_div
+         {
+         \c\s{op_div()}
+
+         Represents a pixel wise arithmetic division operation for the combine() generator.
+
+\e{Invariant subexpression}: always.
+
+         }
+         op_exclusion
+         {
+         \c\s{op_exclusion()}
+
+         Represents a pixel wise \e{exclusion} operation for the combine() generator.
+
+Given two images \e{a} and \e{b} with pixel sample values in the \[0,1\] range, the exclusion operation is defined by the following expression:
+
+\c{\wh{}\wh{}\wh{}0.5\wh{}-\wh{}2*(a\wh{}-\wh{}0.5)*(b\wh{}-\wh{}0.5)}
+
+\e{Invariant subexpression}: always.
+
+         }
+         op_hard_light
+         {
+         \c\s{op_hard_light()}
+
+         Represents a pixel wise \e{hard light} operation for the combine() generator.
+
+Given two images \e{a} and \e{b} with pixel sample values in the \[0,1\] range, the hard light operation is defined by the following expression:
+
+\c{\wh{}\wh{}\wh{}1\wh{}-\wh{}(1\wh{}-\wh{}a)*(1\wh{}-\wh{}2*(b\wh{}-\wh{}0.5))\wh{}\wh{}\wh{}if\wh{}b\wh{}>\wh{}0.5\n
+\wh{}\wh{}\wh{}2*a*b\wh{}\wh{}\wh{}\wh{}\wh{}\wh{}\wh{}\wh{}\wh{}\wh{}\wh{}\wh{}\wh{}\wh{}\wh{}\wh{}\wh{}\wh{}\wh{}\wh{}\wh{}\wh{}\wh{}\wh{}\wh{}\wh{}\wh{}otherwise}
+
+\e{Invariant subexpression}: always.
+
+         }
+         op_linear_burn
+         {
+         \c\s{op_linear_burn()}
+
+         Represents a pixel wise \e{linear burn} operation for the combine() generator.
+
+Given two images \e{a} and \e{b} with pixel sample values in the \[0,1\] range, the linear burn operation is defined by the following expression:
+
+\c{\wh{}\wh{}\wh{}a\wh{}+\wh{}b\wh{}-\wh{}1}
+
+\e{Invariant subexpression}: always.
+
+         }
+         op_linear_light
+         {
+         \c\s{op_linear_light()}
+
+         Represents a pixel wise \e{linear light} operation for the combine() generator.
+
+Given two images \e{a} and \e{b} with pixel sample values in the \[0,1\] range, the linear light operation is defined by the following expression:
+
+\c{\wh{}\wh{}\wh{}min(\wh{}max(\wh{}0,\wh{}a\wh{}+\wh{}2*b\wh{}-\wh{}1\wh{}),\wh{}1\wh{})}
+
+\e{Invariant subexpression}: always.
+
+         }
+         op_max
+         {
+         \c\s{op_max()}
+
+         Represents a pixel wise maximum operation for the combine() generator.
+
+\e{Invariant subexpression}: always.
+
+         }
+         op_min
+         {
+         \c\s{op_min()}
+
+         Represents a pixel wise minimum operation for the combine() generator.
+
+\e{Invariant subexpression}: always.
+
+         }
+         op_mov
+         {
+         \c\s{op_mov()}
+
+         Represents a pixel wise assignment operation for the combine() generator.
+
+\e{Invariant subexpression}: always.
+
+         }
+         op_mul
+         {
+         \c\s{op_mul()}
+
+         Represents a pixel wise arithmetic multiplication operation for the combine() generator.
+
+\e{Invariant subexpression}: always.
+
+         }
+         op_overlay
+         {
+         \c\s{op_overlay()}
+
+         Represents a pixel wise \e{overlay} operation for the combine() generator.
+
+Given two images \e{a} and \e{b} with pixel sample values in the \[0,1\] range, the overlay operation is defined by the following expression:
+
+\c{\wh{}\wh{}\wh{}1\wh{}-\wh{}(1\wh{}-\wh{}2*(a\wh{}-\wh{}0.5))\wh{}*\wh{}(1\wh{}-\wh{}b)\wh{}\wh{}\wh{}if\wh{}a\wh{}>\wh{}0.5\n
+\wh{}\wh{}\wh{}2*a*b\wh{}\wh{}\wh{}\wh{}\wh{}\wh{}\wh{}\wh{}\wh{}\wh{}\wh{}\wh{}\wh{}\wh{}\wh{}\wh{}\wh{}\wh{}\wh{}\wh{}\wh{}\wh{}\wh{}\wh{}\wh{}\wh{}\wh{}\wh{}\wh{}otherwise}
+
+\e{Invariant subexpression}: always.
+
+         }
+         op_pin_light
+         {
+         \c\s{op_pin_light()}
+
+         Represents a pixel wise \e{pin light} operation for the combine() generator.
+
+Given two images \e{a} and \e{b} with pixel sample values in the \[0,1\] range, the pin light operation is defined by the following expression:
+
+\c{\wh{}\wh{}\wh{}max(\wh{}a,\wh{}2*(b\wh{}-\wh{}0.5)\wh{})\wh{}\wh{}\wh{}if\wh{}b\wh{}>\wh{}0.5\n
+\wh{}\wh{}\wh{}min(\wh{}a,\wh{}2*b\wh{})\wh{}\wh{}\wh{}\wh{}\wh{}\wh{}\wh{}\wh{}\wh{}\wh{}\wh{}otherwise}
+
+\e{Invariant subexpression}: always.
+
+         }
+         op_pow
+         {
+         \c\s{op_pow()}
+
+         Represents a pixel wise arithmetic exponentiation operation for the combine() generator.
+
+\e{Invariant subexpression}: always.
+
+         }
+         op_screen
+         {
+         \c\s{op_screen()}
+
+         Represents a pixel wise \e{screen} operation for the combine() generator.
+
+Given two images \e{a} and \e{b} with pixel sample values in the \[0,1\] range, the screen operation is defined by the following expression:
+
+\c{\wh{}\wh{}\wh{}1\wh{}-\wh{}(1\wh{}-\wh{}a)*(1\wh{}-\wh{}b)}
+
+\e{Invariant subexpression}: always.
+
+         }
+         op_soft_light
+         {
+         \c\s{op_soft_light()}
+
+         Represents a pixel wise \e{soft light} operation for the combine() generator.
+
+Given two images \e{a} and \e{b} with pixel sample values in the \[0,1\] range, the soft light operation is defined by the following expression:
+
+\c{\wh{}\wh{}\wh{}(1\wh{}-\wh{}2*b)*a*a\wh{}+\wh{}2*a*b}
+
+\e{Invariant subexpression}: always.
+
+         }
+         op_sub
+         {
+         \c\s{op_sub()}
+
+         Represents a pixel wise arithmetic subtraction operation for the combine() generator.
+
+\e{Invariant subexpression}: always.
+
+         }
+         op_vivid_light
+         {
+         \c\s{op_vivid_light()}
+
+         Represents a pixel wise \e{vivid light} operation for the combine() generator.
+
+Given two images \e{a} and \e{b} with pixel sample values in the \[0,1\] range, the vivid light operation is defined by the following expression:
+
+\c{\wh{}\wh{}\wh{}max(\wh{}0,\wh{}1\wh{}-\wh{}(1\wh{}-\wh{}a)/(2*b)\wh{})\wh{}\wh{}\wh{}if\wh{}b\wh{}<\wh{}0.5\n
+\wh{}\wh{}\wh{}min(\wh{}1,\wh{}a/(2*(1\wh{}-\wh{}b))\wh{})\wh{}\wh{}\wh{}\wh{}\wh{}\wh{}\wh{}otherwise}
+
+\e{Invariant subexpression}: always.
+
+         }
+      }
+%%END_INSERTED
+       }
+
+       \subsection {Local variance operations}
+       {
+           %%INSERT FUNCTIONS krn_flat,krn_gauss
+%%START-INSERTED
+%% BEWARE - Text up to %%END_INSERTED is generated automatically from C++ source files.
+%% Do not update manually !
+      \definition {
+         krn_flat
+         {
+         \c\s{krn_flat()}
+
+         Represents a flat kernel function for local variance calculation with the lvar() generator.
+
+A flat function has identical kernel elements. For example, the flat kernel of size 5 is:
+
+\c{\wh{}\wh{}\wh{}1/25\wh{}1/25\wh{}1/25\wh{}1/25\wh{}1/25\n
+\wh{}\wh{}\wh{}1/25\wh{}1/25\wh{}1/25\wh{}1/25\wh{}1/25\n
+\wh{}\wh{}\wh{}1/25\wh{}1/25\wh{}1/25\wh{}1/25\wh{}1/25\n
+\wh{}\wh{}\wh{}1/25\wh{}1/25\wh{}1/25\wh{}1/25\wh{}1/25\n
+\wh{}\wh{}\wh{}1/25\wh{}1/25\wh{}1/25\wh{}1/25\wh{}1/25}
+
+When applied by convolution, a flat kernel function of size \e{n} computes the arithmetic mean of a neighborhood of n\times{}n pixels.
+
+\e{Invariant subexpression}: always.
+
+         }
+         krn_gauss
+         {
+         \c\s{krn_gauss()}
+
+         Represents a Gaussian kernel function for local variance calculation with the lvar() generator.
+
+A Gaussian kernel is a discrete representation of a normal distribution in two dimensions. For example, the Gaussian kernel of size 5 is:
+
+\c{\wh{}\wh{}\wh{}0.000100\wh{}\wh{}0.003162\wh{}\wh{}0.010000\wh{}\wh{}0.003162\wh{}\wh{}0.000100\n
+\wh{}\wh{}\wh{}0.003162\wh{}\wh{}0.100000\wh{}\wh{}0.316228\wh{}\wh{}0.100000\wh{}\wh{}0.003162\n
+\wh{}\wh{}\wh{}0.010000\wh{}\wh{}0.316228\wh{}\wh{}1.000000\wh{}\wh{}0.316228\wh{}\wh{}0.010000\n
+\wh{}\wh{}\wh{}0.003162\wh{}\wh{}0.100000\wh{}\wh{}0.316228\wh{}\wh{}0.100000\wh{}\wh{}0.003162\n
+\wh{}\wh{}\wh{}0.000100\wh{}\wh{}0.003162\wh{}\wh{}0.010000\wh{}\wh{}0.003162\wh{}\wh{}0.000100}
+
+For local variance calculation, a Gaussian kernel helps to isolate pixel variations at smaller scales, compared with a flat kernel, since the normal distribution concentrates more energy around the center of the 2-D distribution. It also tends to generate more isotropic variance maps, since the flat kernel tends to reproduce a square structure while the Gaussian kernel approximates to a more circular distribution.
+
+\e{Invariant subexpression}: always.
+
+         }
+      }
+%%END_INSERTED
+       }
+
+       \subsection {Morphological operations }
+       {
+           %%INSERT FUNCTIONS str_circular,str_diagonal,str_orthogonal,str_square,str_star,str_threeway
+%%START-INSERTED
+%% BEWARE - Text up to %%END_INSERTED is generated automatically from C++ source files.
+%% Do not update manually !
+      \definition {
+         str_circular
+         {
+         \c\s{str_circular()}
+
+         Represents a circular structuring element in a morphological transformation, such as the medfilt(), erosion() or dilation() generators.
+
+For example, the standard circular structure of size 7 is defined as follows:
+
+\c{\wh{}\wh{}\wh{}.\wh{}.\wh{}x\wh{}x\wh{}x\wh{}.\wh{}.\n
+\wh{}\wh{}\wh{}.\wh{}x\wh{}x\wh{}x\wh{}x\wh{}x\wh{}.\n
+\wh{}\wh{}\wh{}x\wh{}x\wh{}x\wh{}x\wh{}x\wh{}x\wh{}x\n
+\wh{}\wh{}\wh{}x\wh{}x\wh{}x\wh{}x\wh{}x\wh{}x\wh{}x\n
+\wh{}\wh{}\wh{}x\wh{}x\wh{}x\wh{}x\wh{}x\wh{}x\wh{}x\n
+\wh{}\wh{}\wh{}.\wh{}x\wh{}x\wh{}x\wh{}x\wh{}x\wh{}.\n
+\wh{}\wh{}\wh{}.\wh{}.\wh{}x\wh{}x\wh{}x\wh{}.\wh{}.}
+
+where existing elements are marked as 'x' and nonexisting elements are denoted as '.'.
+
+\e{Invariant subexpression}: always.
+
+         }
+         str_diagonal
+         {
+         \c\s{str_diagonal()}
+
+         Represents a diagonal structuring element in a morphological transformation, such as the medfilt(), erosion() or dilation() generators.
+
+For example, a diagonal structure of size 5 is defined as follows:
+
+\c{\wh{}\wh{}\wh{}x\wh{}.\wh{}.\wh{}.\wh{}x\n
+\wh{}\wh{}\wh{}.\wh{}x\wh{}.\wh{}x\wh{}.\n
+\wh{}\wh{}\wh{}.\wh{}.\wh{}x\wh{}.\wh{}.\n
+\wh{}\wh{}\wh{}.\wh{}x\wh{}.\wh{}x\wh{}.\n
+\wh{}\wh{}\wh{}x\wh{}.\wh{}.\wh{}.\wh{}x}
+
+where existing elements are marked as 'x' and nonexisting elements are denoted as '.'.
+
+\e{Invariant subexpression}: always.
+
+         }
+         str_orthogonal
+         {
+         \c\s{str_orthogonal()}
+
+         Represents a orthogonal structuring element in a morphological transformation, such as the medfilt(), erosion() or dilation() generators.
+
+For example, an orthogonal structure of size 5 is defined as follows:
+
+\c{\wh{}\wh{}\wh{}.\wh{}.\wh{}x\wh{}.\wh{}.\n
+\wh{}\wh{}\wh{}.\wh{}.\wh{}x\wh{}.\wh{}.\n
+\wh{}\wh{}\wh{}x\wh{}x\wh{}x\wh{}x\wh{}x\n
+\wh{}\wh{}\wh{}.\wh{}.\wh{}x\wh{}.\wh{}.\n
+\wh{}\wh{}\wh{}.\wh{}.\wh{}x\wh{}.\wh{}.}
+
+where existing elements are marked as 'x' and nonexisting elements are denoted as '.'.
+
+\e{Invariant subexpression}: always.
+
+         }
+         str_square
+         {
+         \c\s{str_square()}
+
+         Represents a square structuring element in a morphological transformation, such as the medfilt(), erosion() or dilation() generators.
+
+A square structure defines all of its elements. For example, a square structure of size 5 is:
+
+\c{\wh{}\wh{}\wh{}x\wh{}x\wh{}x\wh{}x\wh{}x\n
+\wh{}\wh{}\wh{}x\wh{}x\wh{}x\wh{}x\wh{}x\n
+\wh{}\wh{}\wh{}x\wh{}x\wh{}x\wh{}x\wh{}x\n
+\wh{}\wh{}\wh{}x\wh{}x\wh{}x\wh{}x\wh{}x\n
+\wh{}\wh{}\wh{}x\wh{}x\wh{}x\wh{}x\wh{}x}
+
+where existing elements are marked as 'x'.
+
+\e{Invariant subexpression}: always.
+
+         }
+         str_star
+         {
+         \c\s{str_star()}
+
+         Represents a star structuring element in a morphological transformation, such as the medfilt(), erosion() or dilation() generators.
+
+For example, a star structure of size 7 is defined as follows:
+
+\c{\wh{}\wh{}\wh{}.\wh{}.\wh{}.\wh{}x\wh{}.\wh{}.\wh{}.\n
+\wh{}\wh{}\wh{}.\wh{}x\wh{}.\wh{}x\wh{}.\wh{}x\wh{}.\n
+\wh{}\wh{}\wh{}.\wh{}.\wh{}x\wh{}x\wh{}x\wh{}.\wh{}.\n
+\wh{}\wh{}\wh{}x\wh{}x\wh{}x\wh{}x\wh{}x\wh{}x\wh{}x\n
+\wh{}\wh{}\wh{}.\wh{}.\wh{}x\wh{}x\wh{}x\wh{}.\wh{}.\n
+\wh{}\wh{}\wh{}.\wh{}x\wh{}.\wh{}x\wh{}.\wh{}x\wh{}.\n
+\wh{}\wh{}\wh{}.\wh{}.\wh{}.\wh{}x\wh{}.\wh{}.\wh{}.}
+
+where existing elements are marked as 'x' and nonexisting elements are denoted as '.'.
+
+\e{Invariant subexpression}: always.
+
+         }
+         str_threeway
+         {
+         \c\s{str_threeway()}
+
+         Represents a standard three-way structuring element in a morphological transformation, such as the medfilt(), erosion() or dilation() generators.
+
+The standard three-way structure of size 5 is defined as follows:
+
+\c{\wh{}\wh{}\wh{}\wh{}\wh{}Way\wh{}#0\wh{}\wh{}\wh{}\wh{}\wh{}\wh{}\wh{}Way\wh{}#1\wh{}\wh{}\wh{}\wh{}\wh{}\wh{}\wh{}Way\wh{}#2\n
+\wh{}\wh{}\wh{}=========\wh{}\wh{}\wh{}\wh{}=========\wh{}\wh{}\wh{}\wh{}=========\n
+\wh{}\wh{}\wh{}.\wh{}.\wh{}x\wh{}.\wh{}.\wh{}\wh{}\wh{}\wh{}x\wh{}.\wh{}.\wh{}.\wh{}x\wh{}\wh{}\wh{}\wh{}.\wh{}.\wh{}.\wh{}.\wh{}.\n
+\wh{}\wh{}\wh{}.\wh{}.\wh{}x\wh{}.\wh{}.\wh{}\wh{}\wh{}\wh{}.\wh{}x\wh{}.\wh{}x\wh{}.\wh{}\wh{}\wh{}\wh{}.\wh{}.\wh{}.\wh{}.\wh{}.\n
+\wh{}\wh{}\wh{}x\wh{}x\wh{}.\wh{}x\wh{}x\wh{}\wh{}\wh{}\wh{}.\wh{}.\wh{}.\wh{}.\wh{}.\wh{}\wh{}\wh{}\wh{}.\wh{}.\wh{}x\wh{}.\wh{}.\n
+\wh{}\wh{}\wh{}.\wh{}.\wh{}x\wh{}.\wh{}.\wh{}\wh{}\wh{}\wh{}.\wh{}x\wh{}.\wh{}x\wh{}.\wh{}\wh{}\wh{}\wh{}.\wh{}.\wh{}.\wh{}.\wh{}.\n
+\wh{}\wh{}\wh{}.\wh{}.\wh{}x\wh{}.\wh{}.\wh{}\wh{}\wh{}\wh{}x\wh{}.\wh{}.\wh{}.\wh{}x\wh{}\wh{}\wh{}\wh{}.\wh{}.\wh{}.\wh{}.\wh{}.}
+
+where existing elements are marked as 'x' and nonexisting elements are denoted as '.'.
+
+Three-way structures lead to ranking operations where data from different spatial directions are ranked separately. When used to apply morphological operators, standard three-way structures can preserve edges better than box structures, especially when applied recursively.
+
+\e{Invariant subexpression}: always.
+
+         }
+      }
+%%END_INSERTED
+       }
+
+   }
+
+   %  
+   \subsection {Operators}
+   {
+      \subsection {Artihmetic operators}
+      {
+      %%INSERT OPERATORS add,chs,dif,div,inv,mod,mul,plus,pow,sub
+%%START-INSERTED
+%% BEWARE - Text up to %%END_INSERTED is generated automatically from C++ source files.
+%% Do not update manually !
+      \definition {
+         +
+         {
+         \c\s{x + y}
+
+         Addition operator.
+
+Evaluates to \e{x} added to \e{y}.
+
+         }
+         -
+         {
+         \c\s{-x}
+
+         Unary Minus operator (sign change).
+
+Evaluates to \e{x} negative if \e{x} > 0; to \e{x} positive if \e{x} \le{} 0.
+
+         }
+         --
+         {
+         \c\s{x -- y}
+
+         Absolute Difference operator.
+
+Evaluates to the absolute value of \e{x}\minus{}\e{y}.
+
+         }
+         /
+         {
+         \c\s{x / y}
+
+         Division operator.
+
+Evaluates to \e{x} divided by \e{y}.
+
+If \e{y} is zero or insignificant, then the result is conventionally the maximum representable finite 64-bit floating-point value, with the same sign as the numerator.
+
+         }
+         ~
+         {
+         \c\s{~x}
+
+         Pixel Inversion operator.
+
+Evaluates to 1 \minus{} \e{x}, where \e{x} is in the normalized \[0,1\] range (0=black, 1=white).
+
+         }
+         \%
+         {
+         \c\s{x \% y}
+
+         Modulus operator.
+
+Evaluates to the floating-point remainder of the \e{x}/\e{y} division, such that \e{x} = \e{i}\times{}\e{y} + \e{f}, where \e{i} is an integer, \e{f} has the same sign as \e{x}, and the absolute value of \e{f} is less than the absolute value of \e{y}.
+
+If \e{y} evaluates to zero or to an insignificant value, the result is zero conventionally.
+
+         }
+         *
+         {
+         \c\s{x * y}
+
+         Multiplication operator.
+
+Evaluates to \e{x} multiplied by \e{y}.
+
+         }
+         +
+         {
+         \c\s{+x}
+
+         Unary Plus operator.
+
+Evaluates to \e{x}.
+
+         }
+         ^
+         {
+         \c\s{x ^ y}
+
+         Exponentiation operator.
+
+Evaluates to \e{x} raised to \e{y}.
+
+         }
+         -
+         {
+         \c\s{x - y}
+
+         Subtraction operator.
+
+Evaluates to \e{y} subtracted from \e{x}.
+
+         }
+      }
+%%END_INSERTED
+      }
+
+      \subsection {Logical operators}
+      {
+         Logical operators consider a value of 0 as \e{false} and a non-zero value as \e{true}.
+         They return 0 for \e{false} and 1 for \e{true}.
+         For RGB images all channels are handlded independently of each other.
+
+      %%INSERT OPERATORS logicalAnd,logicalNot,logicalOr
+%%START-INSERTED
+%% BEWARE - Text up to %%END_INSERTED is generated automatically from C++ source files.
+%% Do not update manually !
+      \definition {
+         &&
+         {
+         \c\s{x && y}
+
+         Logical AND operator.
+
+Evaluates to 1 if both operands are nonzero; to 0 if any of the operands is zero.
+
+         }
+         !
+         {
+         \c\s{!x}
+
+         Logical NOT operator.
+
+Evaluates to 0 if \e{x} &ne; 0; to 1 if \e{x} = 0.
+
+         }
+         ||
+         {
+         \c\s{x || y}
+
+         Logical OR operator.
+
+Evaluates to 0 if both operands are zero; to 1 if any of the operands is nonzero.
+
+         }
+      }
+%%END_INSERTED
+      }
+
+      \subsection {Bitwise operators}
+      {
+         Bitwise operators operate on 32 bits integer values. 
+         If the operands are floating points, they are truncated to their integer part.
+         As pixel values are between 0.0 and 1.0 inclusive, even if the source image has
+         integer samples, bitwise operations do not make much sense on image data.
+      %%INSERT OPERATORS and,nand,nor,or,xnor,xor
+%%START-INSERTED
+%% BEWARE - Text up to %%END_INSERTED is generated automatically from C++ source files.
+%% Do not update manually !
+      \definition {
+         &
+         {
+         \c\s{x & y}
+
+         Bitwise AND operator.
+
+Evaluates to the bitwise AND operation applied to both operands truncated to integer values. For each pair of corresponding bits in both operands, the result is 1 if both bits are equal to 1, or 0 otherwise.
+
+         }
+         !&
+         {
+         \c\s{x !& y}
+
+         Bitwise NAND operator.
+
+Evaluates to the bitwise NAND operation applied to both operands truncated to integer values. For each pair of corresponding bits in both operands, the result is 0 if both bits are equal to 1, or 1 otherwise.
+
+         }
+         !|
+         {
+         \c\s{x !| y}
+
+         Bitwise NOR operator.
+
+Evaluates to the bitwise NOR operation applied to both operands truncated to integer values. For each pair of corresponding bits in both operands, the result is 1 if both bits are equal to 0, or 0 otherwise.
+
+         }
+         |
+         {
+         \c\s{x | y}
+
+         Bitwise OR operator.
+
+Evaluates to the bitwise OR operation applied to both operands truncated to integer values. For each pair of corresponding bits in both operands, the result is 0 if both bits are equal to 0, or 1 otherwise.
+
+         }
+         !&|
+         {
+         \c\s{x !&| y}
+
+         Bitwise XNOR operator.
+
+Evaluates to the bitwise XNOR operation applied to both operands truncated to integer values. For each pair of corresponding bits in both operands, the result is 1 if both bits have equal values, or 0 otherwise.
+
+         }
+         &|
+         {
+         \c\s{x &| y}
+
+         Bitwise XOR operator.
+
+Evaluates to the bitwise XOR operation applied to both operands truncated to integer values. For each pair of corresponding bits in both operands, the result is 0 if both bits have equal values, or 1 otherwise.
+
+         }
+      }
+%%END_INSERTED
+      }
+
+      \subsection {Relational operators}
+      {
+      Relational operators result in a boolean value of 1 (\e{true}) or 0 \e{false}.
+      %%INSERT OPERATORS equalTo,greaterThan,greaterThanOrEqual,lessThan,lessThanOrEqual,notEqualTo
+%%START-INSERTED
+%% BEWARE - Text up to %%END_INSERTED is generated automatically from C++ source files.
+%% Do not update manually !
+      \definition {
+         ==
+         {
+         \c\s{x == y}
+
+         Equal To relational operator.
+
+Evaluates to 1 if \e{x} = \e{y}; to 0 if \e{x} &ne; \e{y}.
+
+         }
+         >
+         {
+         \c\s{x > y}
+
+         Greater Than relational operator.
+
+Evaluates to 1 if \e{x} > \e{y}; to 0 if \e{x} \le{} \e{y}.
+
+         }
+         >=
+         {
+         \c\s{x >= y}
+
+         Greater Than Or Equal relational operator.
+
+Evaluates to 1 if \e{x} \ge{} \e{y}; to 0 if \e{x} < \e{y}.
+
+         }
+         <
+         {
+         \c\s{x < y}
+
+         Less Than relational operator.
+
+Evaluates to 1 if \e{x} < \e{y}; to 0 if \e{x} \ge{} \e{y}.
+
+         }
+         <=
+         {
+         \c\s{x <= y}
+
+         Less Than Or Equal relational operator.
+
+Evaluates to 1 if \e{x} \le{} \e{y}; to 0 if \e{x} > \e{y}.
+
+         }
+         !=
+         {
+         \c\s{x != y}
+
+         Not Equal To relational operator.
+
+Evaluates to 1 if \e{x} &ne; \e{y}; to 0 if \e{x} = \e{y}.
+
+         }
+      }
+%%END_INSERTED
+      }
+
+      \subsection  {Assignement operators}
+      {
+      %%INSERT OPERATORS assignment,=add,=and,=dif,=div,=logicalAnd,=logicalOr,=mod,=mul,=nand,=nor,=or,=pow,=sub,=xnor,=xor
+%%START-INSERTED
+%% BEWARE - Text up to %%END_INSERTED is generated automatically from C++ source files.
+%% Do not update manually !
+      \definition {
+         =
+         {
+         \c\s{var = expr}
+
+         Assignment operator.
+
+The expression \e{expr} is evaluated, then its resulting value is assigned to the variable \e{var}.
+
+         }
+         +=
+         {
+         \c\s{var += expr}
+
+         Assignment / Addition operator.
+
+The expression \e{expr} is evaluated, its resulting value is then added to the current value of the variable \e{var}, and the result of the addition is assigned to \e{var}.
+
+         }
+         &=
+         {
+         \c\s{var &= expr}
+
+         Assignment / Bitwise AND operator.
+
+The expression \e{expr} is evaluated, its resulting value is then bitwise-ANDed with the current value of the variable \e{var}, and the result of the bitwise AND is assigned to \e{var}.
+
+         }
+         --=
+         {
+         \c\s{var --= expr}
+
+         Assignment / Absolute Difference operator.
+
+The expression \e{expr} is evaluated, its resulting value is then subtracted from the current value of the variable \e{var}, and the absolute value of the difference is assigned to \e{var}.
+
+         }
+         /=
+         {
+         \c\s{var /= expr}
+
+         Assignment / Division operator.
+
+The expression \e{expr} is evaluated, then the current value of the variable \e{var} is divided by the evaluation result, and the result of the division is assigned to \e{var}.
+
+If \e{expr} evaluates to zero or to an insignificant value, \e{var} is assigned conventionally with the maximum representable finite 64-bit floating-point value, with the same sign as \e{var}.
+
+         }
+         &&=
+         {
+         \c\s{var &&= expr}
+
+         Assignment / Logical AND operator.
+
+The expression \e{expr} is evaluated, its resulting value is then logically-ANDed with the current value of the variable \e{var}, and the result of the logical AND (either 1 or 0) is assigned to \e{var}.
+
+         }
+         ||=
+         {
+         \c\s{var ||= expr}
+
+         Assignment / Logical OR operator.
+
+The expression \e{expr} is evaluated, its resulting value is then logically-ORed with the current value of the variable \e{var}, and the result of the logical OR (either 1 or 0) is assigned to \e{var}.
+
+         }
+         \%=
+         {
+         \c\s{var \%= expr}
+
+         Assignment / Modulus operator.
+
+The expression \e{expr} is evaluated, then the current value of the variable \e{var} is divided by the evaluation result, and the remainder of the division is assigned to \e{var}.
+
+If \e{expr} evaluates to zero or to an insignificant value, \e{var} is assigned with zero conventionally.
+
+See also the modulus arithmetic operator.
+
+         }
+         *=
+         {
+         \c\s{var *= expr}
+
+         Assignment / Multiplication operator.
+
+The expression \e{expr} is evaluated, then the current value of the variable \e{var} is multiplied by the evaluation result, and the result of the multiplication is assigned to \e{var}.
+
+         }
+         !&=
+         {
+         \c\s{var !&= expr}
+
+         Assignment / Bitwise NAND operator.
+
+The expression \e{expr} is evaluated, its resulting value is then bitwise-NANDed with the current value of the variable \e{var}, and the result of the bitwise NAND is assigned to \e{var}.
+
+         }
+         !|=
+         {
+         \c\s{var !|= expr}
+
+         Assignment / Bitwise NOR operator.
+
+The expression \e{expr} is evaluated, its resulting value is then bitwise-NORed with the current value of the variable \e{var}, and the result of the bitwise NOR is assigned to \e{var}.
+
+         }
+         |=
+         {
+         \c\s{var |= expr}
+
+         Assignment / Bitwise OR operator.
+
+The expression \e{expr} is evaluated, its resulting value is then bitwise-ORed with the current value of the variable \e{var}, and the result of the bitwise OR is assigned to \e{var}.
+
+         }
+         ^=
+         {
+         \c\s{var ^= expr}
+
+         Assignment / Exponentiation operator.
+
+The expression \e{expr} is evaluated, then the current value of the variable \e{var} is raised to the evaluation result, and the result of the exponentiation is assigned to \e{var}.
+
+         }
+         -=
+         {
+         \c\s{var -= expr}
+
+         Assignment / Subtraction operator.
+
+The expression \e{expr} is evaluated, its resulting value is then subtracted from the current value of the variable \e{var}, and the result of the subtraction is assigned to \e{var}.
+
+         }
+         !&|=
+         {
+         \c\s{var !&|= expr}
+
+         Assignment / Bitwise XNOR operator.
+
+The expression \e{expr} is evaluated, its resulting value is then bitwise-XNORed with the current value of the variable \e{var}, and the result of the bitwise XNOR is assigned to \e{var}.
+
+         }
+         &|=
+         {
+         \c\s{var &|= expr}
+
+         Assignment / Bitwise XOR operator.
+
+The expression \e{expr} is evaluated, its resulting value is then bitwise-XORed with the current value of the variable \e{var}, and the result of the bitwise XOR is assigned to \e{var}.
+
+         }
+      }
+%%END_INSERTED
+      }
+
+   }
+
+
+   \subsection {Symbol definition functions}
+   {
+   %%INSERT SYMBOL_DEFINITION_FUNCTIONS adev,area,asqr,envvar_defined,envvar_value,global,height,init,invarea,iscolor,keyword_defined,keyword_value,maximum,mdev,mean,median,minimum,modulus,pixel,property_defined,property_value,sdev,ssqr,width
+%%START-INSERTED
+%% BEWARE - Text up to %%END_INSERTED is generated automatically from C++ source files.
+%% Do not update manually !
+      \definition {
+         adev
+         {
+         \c\s{symbol = adev( \[image=$T\[, channel\]\] )}
+
+         The average absolute deviation from the median of the specified image.
+
+         }
+         area
+         {
+         \c\s{symbol = area( \[image=$T\] )}
+
+         The area in square pixels of the specified image.
+
+         }
+         asqr
+         {
+         \c\s{symbol = asqr( \[image=$T\[, channel\]\] )}
+
+         The mean of square pixel values of the specified image.
+
+         }
+         envvar_defined
+         {
+         \c\s{symbol = envvar_defined( var )}
+
+         The symbol value will be either one, if the specified environment variable is currently defined for the running process with a non-empty value, or zero otherwise.
+
+Environment variable names are case-sensitive on Linux/UNIX platforms, case-insensitive on Windows.
+
+         }
+         envvar_value
+         {
+         \c\s{symbol = envvar_value( var )}
+
+         The value of the specified environment variable with name \e{var} converted to a scalar.
+
+Environment variable names are case-sensitive on Linux/UNIX platforms, case-insensitive on Windows.
+
+         }
+         global
+         {
+         \c\s{symbol = global( op\[, value\] )}
+
+         Global variable initialization.
+
+The symbol will be declared as a global variable with the specified global operator and initial value.
+
+The 'op' global operator specification can be one of '+' and '*'. For example, 'n=global(+)' will declare a global additive variable \e{n} with a default zero initial value.
+
+Global variables can only play lvalue roles in expressions. In practice this means that they can only occur at the left hand of an assignment operator. For example, if a global variable \e{n} has been declared, then an expression such as 'x = $T + n' is illegal. Furthermore, global variables are always specialized for additive or multiplicative operations. For example, if \e{n} has been declared as additive with 'n=global(+)', then 'n *= $T' is illegal, but 'n -= $T < 0.01' is valid.
+
+If no explicit initial value is specified, additive global variables are initialized to zero and multiplicative global variables are initialized to one. The final values of all global variables are reported on the process console after PixelMath execution.
+
+         }
+         height
+         {
+         \c\s{symbol = height( \[image=$T\] )}
+
+         The width in pixels of the specified image.
+
+         }
+         init
+         {
+         \c\s{symbol = init( \[value=0\] )}
+
+         Variable initialization.
+
+The symbol will be declared as a thread-local variable with the specified initial value.
+
+If no explicit initial value is specified, thread-local variables are initialized to zero by default.
+
+         }
+         invarea
+         {
+         \c\s{symbol = invarea( \[image=$T\] )}
+
+         The reciprocal of the area in square pixels of the specified image.
+
+         }
+         iscolor
+         {
+         \c\s{symbol = iscolor( \[image=$T\] )}
+
+         The result is one if the specified image is in the RGB color space; zero if it is a grayscale monochrome image.
+
+         }
+         keyword_defined
+         {
+         \c\s{symbol = keyword_defined( \[image=$T,\] keyword )}
+
+         The symbol value will be either one, if the specified FITS header keyword is defined in the image, or zero if the keyword is not defined.
+
+FITS keyword names are case-insensitive.
+
+         }
+         keyword_value
+         {
+         \c\s{symbol = keyword_value( \[image=$T,\] keyword )}
+
+         The value of a numeric or Boolean FITS header keyword in the specified image. Boolean keywords generate 0 (false) or 1 (true) symbol values.
+
+FITS keyword names are case-insensitive.
+
+         }
+         maximum
+         {
+         \c\s{symbol = maximum( \[image=$T\[, channel\]\] )}
+
+         The maximum pixel value in the specified image.
+
+         }
+         mdev
+         {
+         \c\s{symbol = mdev( \[image=$T\[, channel\]\] )}
+
+         The median absolute deviation from the median (MAD) of the specified image.
+
+         }
+         mean
+         {
+         \c\s{symbol = mean( \[image=$T\[, channel\]\] )}
+
+         The arithmetic mean of pixel values in the specified image.
+
+         }
+         median
+         {
+         \c\s{symbol = median( \[image=$T\[, channel\]\] )}
+
+         The median pixel value in the specified image.
+
+         }
+         minimum
+         {
+         \c\s{symbol = minimum( \[image=$T\[, channel\]\] )}
+
+         The minimum pixel value in the specified image.
+
+         }
+         modulus
+         {
+         \c\s{symbol = modulus( \[image=$T\[, channel\]\] )}
+
+         The modulus (sum of absolute values) of the specified image.
+
+         }
+         pixel
+         {
+         \c\s{symbol = pixel( \[image=$T,\] x, y )\n
+\n
+
+symbol = pixel( image, x, y, channel )}
+
+         The pixel or pixel sample of an image at the specified coordinates. Out-of-range image coordinates generate zero symbol values.
+
+         }
+         property_defined
+         {
+         \c\s{symbol = property_defined( \[image=$T,\] property )}
+
+         The symbol value will be either one, if the specified XISF property is defined in the image, or zero if the property is not defined.
+
+XISF property names are case-sensitive.
+
+         }
+         property_value
+         {
+         \c\s{symbol = property_value( \[image=$T,\] property )}
+
+         The value of a vector or scalar XISF image property in the specified image.
+
+XISF property names are case-sensitive.
+
+         }
+         sdev
+         {
+         \c\s{symbol = sdev( \[image=$T\[, channel\]\] )}
+
+         The standard deviation from the mean of the specified image.
+
+         }
+         ssqr
+         {
+         \c\s{symbol = ssqr( \[image=$T\[, channel\]\] )}
+
+         The sum of square pixel values of the specified image.
+
+         }
+         width
+         {
+         \c\s{symbol = width( \[image=$T\] )}
+
+         The width in pixels of the specified image.
+
+         }
+      }
+%%END_INSERTED
+   }
+  
+   \subsection {Meta symbols}
+   {
+   %%INSERT METASYMBOLS $A,$M,$T
+%%START-INSERTED
+%% BEWARE - Text up to %%END_INSERTED is generated automatically from C++ source files.
+%% Do not update manually !
+      \definition {
+         $A
+         {
+         \c\s{$A\n
+\n
+
+$active}
+
+         Active image.
+
+The $A (or $active) metasymbol represents the active image in the current workspace, that is, the image in the main view that has the keyboard focus when the instance of PixelMath is executed.
+
+$A can always be used, in both the view and global execution contexts. If there is no active image in the current workspace, a runtime error will occur if $A is used.
+
+         }
+         $M
+         {
+         \c\s{$M\n
+\n
+
+$mask}
+
+         Target mask image.
+
+The $M (or $mask) metasymbol represents the mask image currently selected for the target image, when PixelMath is being executed in a view context.
+
+$M is illegal when PixelMath is being executed as a global process, for the same reason $T is also illegal in this case: no target image exists for execution in the global context.
+
+         }
+         $T
+         {
+         \c\s{$T\n
+\n
+
+$target}
+
+         Target image.
+
+The $T (or $target) metasymbol represents the target image when PixelMath is being executed in a view context.
+
+$T is illegal when PixelMath is executed as a global process, i.e. when a new image is being generated instead of replacing an existing one, since in these cases no target image exists.
+
+         }
+      }
+%%END_INSERTED
+   }
+   
+   \subsection {Directives}
+   {
+   %%INSERT DIRECTIVES .pragma,.symbols
+%%START-INSERTED
+%% BEWARE - Text up to %%END_INSERTED is generated automatically from C++ source files.
+%% Do not update manually !
+      \definition {
+         .pragma
+         {
+         \c\s{.pragma arg1\[, arg2\[, ...\]\];}
+
+         Pragma directive.
+
+The pragma directive allows you to modify PixelMath process parameters directly from executed expressions. Each argument of a pragma directive overrides the current value of a working PixelMath parameter. The supported arguments are currently the following:
+
+\s{rescale}\n
+Enable the \e{rescale result} option.
+
+\s{no-rescale}\n
+Disable the \e{rescale result} option.
+
+\s{truncate}\n
+Enable the \e{truncate result} option.
+
+\s{no-truncate}\n
+Disable the \e{truncate result} option.\n
+** Warning ** Platform stability is not guaranteed if out-of-range pixel sample values propagate after PixelMath execution.
+
+\s{64_bit}\n
+Enable the \e{use 64-bit working images} option.
+
+\s{no-64_bit}\n
+Disable the \e{use 64-bit working images} option.
+
+\s{single_thread}\n
+Enable the \e{single threaded} option.
+
+\s{no-single_thread}\n
+Disable the \e{single threaded} option.
+
+\s{optimize}\n
+Enable the \e{code optimization} option.
+
+\s{no-optimize}\n
+Disable the \e{code optimization} option.
+
+\s{cache}\n
+Enable the \e{cache generated images} option.
+
+\s{no-cache}\n
+Disable the \e{cache generated images} option.
+
+\s{single_expr}\n
+Enable the \e{use a single RGB/K expression} option.
+
+\s{no-single_expr}\n
+Disable the \e{use a single RGB/K expression} option.
+
+\s{new_image}\n
+Enable the \e{create new image} option.
+
+\s{no-new_image}\n
+Disable the \e{create new image} option.
+
+\s{alpha}\n
+Enable the \e{alpha channel} option.
+
+\s{no-alpha}\n
+Disable the \e{alpha channel} option.
+
+Multiple arguments can be specified as a comma (,) separated list. The pragma directive must end with an expression separator (;).
+
+Directives must be specified before any executable expression and cannot be mixed with executable expressions. In practice this means that directives can only be included at the begining of a PixelMath set of expressions.
+
+         }
+         .symbols
+         {
+         \c\s{.symbols arg1\[, arg2\[, ...\]\];}
+
+         Symbols directive.
+
+The symbols directive allows you to define a list of one or more symbols directly from executed PixelMath expressions. When the symbols directive is present it overrides the current contents of the \e{symbols} process parameter, that is, the contents of the Symbols section will be ignored if this directive is present in the expression(s). For documentation on PixelMath symbols, their roles and initialization syntax, see the process documentation and the Symbol Definition section on this Expression Editor dialog.
+
+Multiple symbol definitions can be specified as a comma (,) separated list. The symbols directive must end with an expression separator (;).
+
+Directives must be specified before any executable expression and cannot be mixed with executable expressions. In practice this means that directives can only be included at the begining of a PixelMath set of expressions.
+
+         }
+      }
+%%END_INSERTED
+   }
+   
+
+
+}
+
+\make[noauthors]
