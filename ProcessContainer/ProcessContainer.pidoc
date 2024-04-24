@@ -54,7 +54,7 @@
       \center \image[size:70\%] ProcessContainerFromHistory.png 
 
    Some scripts may also create a ProcessContainer.
-   "WeightedBatchPreprocessing" generate a ProcessContainer in the form of a script file in the log directory.
+   "WeightedBatchPreprocessing" generates a ProcessContainer in the form of a script file in the log directory.
    Executing that script will create and open (but not execute) a ProcessContainer on the workspace.
    }
 
@@ -66,7 +66,7 @@
         
         \center \image[size:80\%] ProcessContainerInstanceOperations.png 
 
-      New process intances (icons) can be dragged from the workspace to the desired location in the ProcessContainer.
+      New process instances (icons) can be dragged from the workspace to the desired location in the ProcessContainer.
 
       \note { While you can't directly edit the code for each process within the container,
        you can modify the entire container's code using 
