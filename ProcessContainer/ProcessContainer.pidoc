@@ -1,7 +1,8 @@
 \documentclass PIToolDoc
 
-\tool ProcessContainer
+%% The source uses https://sembr.org/ style of line breaks, when suitable, to ease GIT patching
 
+\tool ProcessContainer
 
 \module ProcessContainer
 
@@ -22,25 +23,41 @@
 }
 
 \brief {
-   ProcessContainer lets you group various image processing steps (represented by process icons) and run them together on an image. 
+   ProcessContainer lets you group various image processing steps 
+   (represented by process icons) 
+   and run them together on an image. 
    It's like a recipe for editing your images!
 }
 
 \description {
 
-   The ProcessContainer contains a sequence of process instances that can be applied on a View or globally. 
-   It is recursive, a ProcessContainer can contain other ProcessContainers.
+   The ProcessContainer contains a sequence of process instances 
+   that can be applied on a View or globally. 
+   It is recursive, 
+   a ProcessContainer can contain other ProcessContainers.
 
    \center \image[size:95\%] ProcessContainer.png 
 
    Each line specifying a process instance has the following attributes:
+
    \list[unordered] {
-      { Enabled/Disabled: A green tick (if it is enabled) or red cross (if it is disabled). }
-      { Process icon & name: Easily identify each processing step. }
-      { Mask (optional) Specify a mask to limit the effect of a process to a certain area. }
-      { Execution time and duration (informational): Shows when and how long a process took if it was run before. }
+      { Enabled/Disabled: 
+         A green tick (if it is enabled) or red cross (if it is disabled). 
+      }
+      { Process icon & name: 
+         Easily identify each processing step. 
+      }
+      { Mask (optional): 
+         Specify a mask to limit the effect of a process to a certain area.
+      }
+      { Execution time and duration (informational): 
+         Shows when and how long a process took if it was run before.
+      }
       { When selected, a window providing the javascript or XPSM definition fo the process. 
-      The window showing the code can be hiden or shown using the double blue arrow just below the window of the instances. }
+         The window showing the code can be hiden 
+         or shown using the double blue arrow 
+         just below the window of the instances. 
+      }
    }
 
 }
@@ -48,29 +65,38 @@
 \usage {
 
    \subsection { Creating ProcessContainer } {
-   You can create a ProcessConainer from an image history by 
-   dragging the blue New instance icon of the view history to the workspace.
 
-      \center \image[size:70\%] ProcessContainerFromHistory.png 
+      You can create a ProcessConainer from an image history 
+      by dragging the blue New instance icon of the view history to the workspace.
 
-   Some scripts may also create a ProcessContainer.
-   "WeightedBatchPreprocessing" generates a ProcessContainer in the form of a script file in the log directory.
-   Executing that script will create and open (but not execute) a ProcessContainer on the workspace.
+         \center \image[size:70\%] ProcessContainerFromHistory.png 
+
+      Some scripts may also create a ProcessContainer.
+      "WeightedBatchPreprocessing" generates a ProcessContainer 
+      in the form of a script file in the log directory.
+      Executing that script will create and open (but not execute) a ProcessContainer on the workspace.
    }
 
    \subsection { Editing process instances } {
-      The process instances in a container can be enabled or disabled using the buttons as specified below or by double clicking on the tick mark.
+
+      The process instances in a container can be enabled or disabled 
+      using the buttons as specified below 
+      or by double clicking on the tick mark.
       They can be reordered or deleted.
-      Double clicking on the name of a process will open the user interface of that process. You can edit the parameters and put it back in the 
-      ProcessContainer,  but you may want to delete the previous instance.
+      Double clicking on the name of a process will open the user interface of that process. 
+      You can edit the parameters and put it back in the ProcessContainer, 
+      but you may want to delete the previous instance.
         
-        \center \image[size:80\%] ProcessContainerInstanceOperations.png 
+         \center \image[size:80\%] ProcessContainerInstanceOperations.png 
 
-      New process instances (icons) can be dragged from the workspace to the desired location in the ProcessContainer.
+      New process instances (icons) can be dragged from the workspace 
+      to the desired location in the ProcessContainer.
 
-      \note { While you can't directly edit the code for each process within the container,
-       you can modify the entire container's code using 
-       the "Edit Instance Source Code" option. }
+      \note { 
+         While you can't directly edit the code for each process within the container,
+         you can modify the entire container's code using 
+         the "Edit Instance Source Code" option. 
+      }
    }
 
    \subsection { Running ProcessContainers } {
@@ -78,21 +104,19 @@
       The process container can be executed as any other process, using Apply on an image 
       or Apply Global. 
       
-        \list[unordered] {
-          { Use "Apply" on an image to run the container on that specific image. 
-          In that case all process instances will be applied to the successive versions of the image.
-          They can refer to other images by name.
-          This is usually the case of ProcessContainer created from the view history.
+      \list[unordered] {
+         { Use "Apply" on an image to run the container on that specific image. 
+            In that case all process instances will be applied to the successive versions of the image.
+            They can refer to other images by name.
+            This is usually the case of ProcessContainer created from the view history.
          }
          { Use "Apply Global" to run the container without reference to a specific image.
-         In that case all process must refer to existing images by name or by file.
-         This is the case of the the ProcessContainer created by WeightedBatchPreprocessing.
+            In that case all process must refer to existing images by name or by file.
+            This is the case of the the ProcessContainer created by WeightedBatchPreprocessing.
          }
-
-        }
+      }
    }
 }
-
 
 \make[noauthors]
 
