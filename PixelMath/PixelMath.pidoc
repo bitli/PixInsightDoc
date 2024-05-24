@@ -45,14 +45,12 @@
 %% -------------------------------------------------------------------------------------------
 
 \brief {
-   ProcessContainer lets you group various image processing steps (represented by process icons) and run them together on an image. 
-   It's like a recipe for editing your images!
+   PixelMath is a versatile tool within PixInsight that performs calculations to generate new image content. 
 }
 
 \introduction {
 
-   PixelMath is a versatile tool within PixInsight that performs calculations to generate new image content. 
-   It operates by applying a series of expressions systematically and independently to each pixel. 
+   PixelMath operates by applying a series of expressions systematically and independently to each pixel. 
    This results in either a new image 
    or the replacement of the content of an existing image, possibly with masking in the latter case.
 
