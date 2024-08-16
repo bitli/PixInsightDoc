@@ -1,8 +1,11 @@
 # PixInsightDoc
-Working directory for PixInsightDoc
 
-This is a temporary project to share development of PixInsight documentation
 
-Tick `Generate new PIDoc system` the first time you compile a PIDoc document to a local folder,
-the target local folder will contain the generated html and the required supprt files.
-Thsi is not required for further compilation to the same target.
+Source of unoficial PixInsight documentation, in PIDOC format, and support for PixInsight update directory.
+
+Ideally this documentation should be verified and distributed by the official GitLab repository,
+but as this takes month or years, this parallel repository is used 
+to provide early access to the document in a convenient form.
+If official documentation becomes available during my life time, I will remove the corresponding documents.
+
+

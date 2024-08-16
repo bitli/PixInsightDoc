@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<xri version="1.0">
+  <description>
+     <p>
+		Unoficial documentation for some PixInsight processes
+     </p>
+  </description>
+   <platform os="all" arch="noarch" version="1.8.9:2.0.0">
+      <package fileName="ProcessContainer-doc-v1.0.0.zip"
+               sha1="tbd"
+               type="documentation"
+               releaseDate="20240816">
+         <title>
+            Unoficial documentation of Process Container
+         </title>
+         <description>
+            <p>
+               Unoficial documentation of ProcessContainer.
+               This is provided for convenience of users but there is no guarantee that is is complete or correct.
+               Use at you own risks.
+            </p>
+          </description>
+      </package>
+   </platform>
+</xri>
