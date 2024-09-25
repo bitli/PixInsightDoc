@@ -29,7 +29,15 @@
    It's like a recipe for editing your images!
 }
 
+
 \description {
+
+   \note { 
+      This documentation is user contributed and is NOT an official PixInsight documentation !\n
+      It was created in sept 2024 and is relevant for PixInsight 1.8.9-3\n
+      Please see https://github.com/bitli/PixInsightDoc/blob/main/README.md for additional information.
+   }
+
 
    The ProcessContainer contains a sequence of process instances 
    that can be applied on a View or globally. 
