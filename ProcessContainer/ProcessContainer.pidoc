@@ -35,7 +35,7 @@
    \note { 
       This documentation is user contributed and is NOT an official PixInsight documentation !\n
       It was created in sept 2024 and is relevant for PixInsight 1.8.9-3\n
-      Please see https://github.com/bitli/PixInsightDoc/blob/main/README.md for additional information.
+      Please see \xref {https://github.com/bitli/PixInsightDoc/blob/main/README.md} {this README.md} for additional information.
    }
 
 
