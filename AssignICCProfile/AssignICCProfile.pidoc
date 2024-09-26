@@ -1,0 +1,95 @@
+
+\documentclass PIToolDoc
+
+\tool AssignICCProfile
+
+\module AssignICCProfile
+
+\categories {
+    ColorManagement
+}
+
+\keywords {
+    color profile, ICC profile
+}
+
+\author {
+    Jean-Marc Lugrin, PI user
+}
+
+\copyright {
+    2024, Jean-Marc Lugrin
+    2013-2024, Juan Conejero (for extracts from the forums)
+}
+
+\brief {
+
+    The Assign ICC Profile process allows you to define the color profile for an RGB image.
+
+}
+
+
+\description {
+
+   \note { 
+      This documentation is user contributed and is NOT an official PixInsight documentation !\n
+      It was created in sept 2024 and is relevant for PixInsight 1.8.9-3\n
+      Please see \xref {https://github.com/bitli/PixInsightDoc/blob/main/README.md} {this README.md} for additional information.
+   }
+
+    When an image is tagged with a color profile, your operating system may adjust the colors to best match your monitor's capabilities, provided that color profile management is enabled and a monitor profile is specified. When saving a profile-tagged image in a format that supports color profiles, such as XISF, JPEG, JPEG2000, or TIFF, you can choose to embed the profile in the file. This ensures the image is displayed accurately (or at least acceptably) on monitors with different characteristics than yours.
+
+    By default, if no profile is assigned, the image will be tagged with the default profile specified in the \tref ColorManagementSetup ColorManagementSetup process. You can also leave the image untagged, which typically defaults to \e{sRGB}. The AssignICCProfile tool allows you to either assign a specific profile to an image or leave it untagged.
+
+    
+    \center \image[size:80\%] {image1.png}
+
+    Assigning a profile does not modify the RGB channel values of the image in PixInsight. It only determines how these values should be displayed on output devices, ensuring the correct color and intensity for each RGB triplet. 
+}
+
+
+\section{Recommendation} {
+
+    Each image has its own profile. However, it's generally recommended to use the same profile for all images in a project unless there is a specific reason to use different profiles.
+
+    Unless you are knowledgeable about color profiles, it is safer to work exclusively with the \e{sRGB} profile throughout your workflow. Inconsistent profiles may appear correct on your screen but can produce poor or unexpected results when the file is exported, shared, or reused in PixInsight. It’s advisable to set \e{sRGB} as the default for grayscale and proofing profiles in \tref ColorManagementSetup ColorManagementSetup (\e{sRGB IEC61966-2.1}).
+
+    Avoid using a screen calibration profile to tag an image unless you have expertise in color management and do not plan to share the image.
+}
+
+
+\usage {
+    \subsection{Current profile} {
+
+      The first field allows you to select the view to operate on, showing the current profile of the image. If no profile is assigned, \a{<* None *>} will be displayed, followed by the default profile set in \tref ColorManagementSetup ColorManagementSetup.
+
+      
+      \center \image[size:80\%] {image2.png}
+    }
+
+    \subsection{New profile} {
+
+      You have several options:
+      \list {
+        {
+        \s{Assign the default profile} - it is specified by \tref ColorManagementSetup ColorManagementSetup tool.
+
+        }
+        {
+        \s{Leave the image untagged} - most systems will assume untagged images use the \e{sRGB} profile.
+
+        }
+        {
+        \s{Assign a specific profile} - such as \e{sRGB} or \e{DCI-P3} (commonly used for video and mobile devices). It is recommended to avoid using screen-specific calibration profiles, as they are typically not suitable for broader use.
+
+        }
+      }
+
+      After selecting the desired profile, click "Apply" to assign it to the image, or drag the "New Instance" to the target view. If color management is enabled (as it is by default), the displayed image will immediately reflect the new profile if it differs from the current one. You can verify global color management settings in \tref ColorManagementSetup ColorManagementSetup and check the image’s color management status in the Image/Color Management menu.
+    }
+
+}
+
+\relatedtools { ICCProfileTransformation, ColorManagementSetup }
+
+\make[noauthors]
