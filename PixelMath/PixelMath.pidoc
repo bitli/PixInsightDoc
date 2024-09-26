@@ -17,7 +17,7 @@
 }
 
 \copyright {
-   2024, Jean-Marc Lugrin
+   2024, Jean-Marc Lugrin.
    2013-2024, Juan Conejero (for extracts from the forums)
 }
 
@@ -53,7 +53,7 @@
 \note { 
       This documentation is user contributed and is NOT an official PixInsight documentation !\n
       It was created in sept 2024 and is relevant for PixInsight 1.8.9-3\n
-      Please see https://github.com/bitli/PixInsightDoc/blob/main/README.md for additional information.
+      Please see \xref {https://github.com/bitli/PixInsightDoc/blob/main/README.md} {this README.md} for additional information.
    }
 
 
@@ -194,7 +194,7 @@
       and the result defines the values (one for each channel) of the generated pixel.
 
       In the expression you can access information about the generated pixel location
-      and the size of the generated image using \lref s_m_image_information {image information functions}.
+      and the size of the generated image using \lref s_f_image_information {image information functions}.
       This location information can be used, for example, to create figures 
       by using the location in control expression.
       They can also be used to select source pixels 
@@ -254,9 +254,9 @@
          {
             Any image used as a source of data.
             It may be the image identifier of an image present in the workspace 
-            or a meta identifier as \lref m_$T \s\c{$T}, \lref m_$M \s\c{$M} or \lref m_A \s\c{A}.
+            or a meta identifier as \lref m_$T \s\c{$T}, \lref m_$M \s\c{$M} or \lref m_$A \s\c{A}.
          }
-         { mask \lref m_$T \s\c{$T} }
+         { mask \lref m_$M \s\c{$M} }
          {
             The mask attached to the target image \lref m_$T \s\c{$T}, a monochrome image.
             It can be used to create mask operations in the expression 
@@ -290,7 +290,12 @@
 
    \subsection {Different image sizes}
    {
-      This is an advanced topic, usually you work with images of the same size.
+      \note {
+         Warning - PixelMath can work with images of different sizes with some restrictions.
+         However the rules are not totally clear the option \e{Gamma correction} is not availlable
+         when yyou work with strteched images.
+         It is advisable to match the size of the images before combining them with PixelMath.
+      }
 
       If, in an expression, you refer to an image by its identifier 
       or meta name (\s\c{$T}, \s\c{$A} or \s\c{$M}), 
@@ -327,7 +332,7 @@
          {
             If the source image is smaller than the target image,
             then the value of the source pixel at the same relative location 
-            is interpolated from the surrounding source pixels using \e{BiCubiPixelInterpolation}.
+            is interpolated from the surrounding source pixels using \e{BiCubiPixelInterpolation}, without applying \e{Gamma correction}.
          }
       }
  
@@ -381,7 +386,7 @@
       It is often useful to generate an image with alpha channel from a normal image. 
       The following example tranforms all fully white pixels to fully transparent
       and the others to fully opaque (opacity=1) or partially opaque (for example 0.05 for a watermark).
-      The \lref d_dot_pragm {pragma alpha} forces the generation of an image with an alpha channel.
+      The \lref d_dot_pragma {pragma alpha} forces the generation of an image with an alpha channel.
 
       \code[lang:pmath] { #:
          // R:
@@ -901,7 +906,7 @@
          It is an error to access a non-existent channel.
 
           When used as a function parameter, the usage depends on the function.\n
-          The function \lref s_pixel {\s\c{pixel(image, x, y)}} selects a pixel by absolute coordinates.
+          The function \lref f_pixel {\s\c{pixel(image, x, y)}} selects a pixel by absolute coordinates.
       } %subsection
 
       \subsection {\label s_e_symbol Symbol references}
@@ -1052,7 +1057,9 @@
 
    \subsection  {Scalar functions}
    {
-      Scalar functions return a scalar in the context of a channel.
+
+      Scalar functions return a scalar value. Most functions accept either a scalar values or an image or channel reference as parameter(s).
+      In the cas of an image reference the value of the current channel at the current relative position is used.  See \lref statistic_functions {statistical functions} for more complex usage of image references.
 
       \subsection {Control functions}
       {
@@ -1530,11 +1537,18 @@
          }
          %%END_INSERTED
       }
-      \subsection {Statistic calculation functions for images}
+      \subsection {\label statistic_functions Statistic calculation functions for images}
       {
-         All image statistics calculation functions, such as med(), mdev(), mean(), min(), max(), etc, 
-         include now an optional set of 4 parameters to define a rectangular region of interest. 
-         For example, this is now the definition of the med() function when applied to calculate the median pixel value of an image:
+         All image statistics calculation functions, such as med(), mdev(), mean(), min(), max(), etc accept either a list of scalar values or a single image reference. 
+
+         \list{
+            {Scalar values (constants, result of scalar functions) are the parameters of the statistical function and result in a scalar value}
+            {If more than one image or channel is provided as a parameter, the scalar value of the pixel at the current position is used. So the statistic is applied pixel by pixel to the set of images.}
+            {A single image parameter specfies an image whose pixels are combined using the statistical function, resulting in a scala.}
+         }
+
+         The single \e{image} parameter include an optional set of 4 parameters to define a rectangular region of interest. 
+         For example, this is the definition of the med() function when applied to calculate the median pixel value of an image:
 
          \code {med( image\[, x0, y0, w, h\] )}
 
@@ -2790,7 +2804,7 @@
       }
       \subsection {\label s_f_kenerls Kernel selectors for local variance generator}
       {
-         The following functions can be used with the \lref s_lvar {lvar() generator}
+         The following functions can be used with the \lref f_lvar {lvar() generator}
          to select a kernel function for local variance calculation:
 
          %%INSERT FUNCTIONS krn_flat,krn_gauss
@@ -2844,7 +2858,7 @@
       \subsection {\label s_f_str Structure selectors for morphological generators }
       {
          The following functions can be used with 
-         the \lref s_medfilt {medfilt()}, \lref s_erosion {erosion()} and \lref s_dilation {dilation()} generators 
+         the \lref f_medfilt {medfilt()}, \lref f_erosion {erosion()} and \lref f_dilation {dilation()} generators 
          to select a structuring element to apply the corresponding morphological operators:
 
          %%INSERT FUNCTIONS str_circular,str_diagonal,str_orthogonal,str_square,str_star,str_threeway
@@ -3008,7 +3022,7 @@
          }
       }
 
-      \subsection {Statistical functions}
+      \subsection {Symbol statistical functions}
       {
          %%INSERT SYMBOL_DEFINITION_FUNCTIONS adev,asqr,maximum,mdev,mean,median,minimum,modulus,sdev,ssqr
          %%START-INSERTED
@@ -3099,7 +3113,7 @@
          %%END_INSERTED
       }
 
-      \subsection {\label s_d_image_information Image information functions}
+      \subsection {\label s_d_image_information Symbol image information functions}
       {
                %%INSERT SYMBOL_DEFINITION_FUNCTIONS area,height,invarea,iscolor,keyword_defined,keyword_value,pixel,property_defined,property_value,width
                %%START-INSERTED
