@@ -1,0 +1,99 @@
+
+\documentclass PIToolDoc
+
+\tool LinearFit
+
+\module LinearFit
+
+\categories {
+    ColorManagement
+}
+
+\keywords {
+    color profile, ICC profile
+}
+
+\author {
+    Jean-Marc Lugrin, PI user
+}
+
+\copyright {
+    2024, Jean-Marc Lugrin
+    2013-2024, Juan Conejero (for extracts from the forums)
+}
+
+\description {
+
+    \note { 
+      This documentation is user contributed and is NOT an official PixInsight documentation !\n
+      It was created in sept 2024 and is relevant for PixInsight 1.8.9-3\n
+      Please see \xref {https://github.com/bitli/PixInsightDoc/blob/main/README.md} {this README.md} for additional information.
+   }
+
+
+    \e{LinearFit} is a tool that matches the background and signal lightness levels of one image to another using a linear transformation.
+
+    
+    \center \image[size:70\%]{image1.png}
+
+    This tool takes three parameters: a reference image and two boundaries that define a sampling interval within the normalized \[0,1\] range. When applied to a target image, LinearFit calculates a set of linear fitting functions—one for each channel—to align the mean background and signal levels of the target image with those of the reference image. The fitting functions are derived from the pixels whose values fall within the defined sampling interval. For a pixel value \e{v} to be included, it must satisfy the condition:
+
+    \e{#:      rlow < v < rhigh​:#}
+
+    where rlow and rhigh are the lower and upper rejection limits, respectively.
+
+    LinearFit computes a linear fitting function of the form:
+
+    \e{#:      y = a + b*x​:#}
+
+    The coefficients \e{a} and \e{b} are calculated using a robust algorithm that minimizes average absolute deviation of the fitted line with respect to the images being matched.
+Both the reference and target images must be registered beforehand, as unaligned images will lack correlation between the sampled pixels, leading to incorrect or meaningless fitting results. An indicator of this issue is if the scaling coefficient b is close to zero or negative. However, dissimilar images may still produce an apparently reasonable fitting function, even though the fit might not be meaningful.
+
+    The term "linear" in this context refers to the function used to match the target image to the reference image. The images themselves may be either linear or non-linear.
+
+    \e{LinearFit} provides useful information in the console, including the rejection limits, fitting coefficients, achieved average absolute deviation (sigma values), and the percentage of pixels used in the fitting process.
+
+    Example of fitting to lightness images before an LRGB combination.
+    \list[ordered] {
+      {
+      Apply initial nonlinear histogram transformations to the \e{RGB} and \e{L} images independently. First, adjust the \e{L} image to the desired brightness and contrast. Then, aim to match the overall illumination of L when transforming RGB. Do this roughly by eye using the \e{CIE L*} display mode (\e{Shift+Ctrl+L} on Windows, \e{Shift+Cmd+L} on Mac). Precise adjustments will be made in the following steps.
+      }
+      {
+      Extract the \e{CIE L*} component of the \e{RGB} image using the \tref ChannelExtraction ChannelExtraction tool. Select the \e{CIE Lab*} color space, uncheck the \e{a*} and \e{b*} options, and apply this to the RGB image to create a new image (let's call it L<e{fromRGB}).
+      }
+      {
+      Open the LinearFit tool (found under the ColorCalibration category). Select the \e{L} image as the reference and apply the LinearFit to the \e{L*} component of the RGB image (LfromRGB) that was extracted in the previous step.
+      }
+      {
+      Reinsert the fitted \e{L*} component (\e{LfromRGB}) into the \e{RGB} image using the \tref ChannelCombination ChannelCombination tool.
+      }
+      {
+      At this point the \e{RGB} and \e{L} images should be closely matched. Use the \tref LRGBCombination LRGBCombination tool to replace the luminosity of the \e{RGB} image with the \e{L} image. Do not modify the luminance transfer function or channel weights of \tref LRGBCombination LRGBCombination, as LinearFit has already matched the images more effectively than manual adjustments could achieve.
+      }
+    }
+
+    \note {Warning - Although \e{LinearFit} is in the category \e{ColorCalibration}, it is not suitable for matching RGB channels one to another for color calibration. It does not consider background or white point adjustments. Instead, it assumes that differences between images are linear and simply matches their intensity levels. See the related tools for information on color calibration.
+    }
+}
+
+
+\usage {
+    \list[ordered] {
+      {
+      Select the reference image.
+      }
+      {
+      Optionally, set rejection limits. This can help exclude saturated points, which are not linear, or in some cases, reduce the influence of the background in the fitting process.
+      }
+      {
+      Apply the process to the target image(s) to adapt them.
+      }
+      {
+      Check the console for results. If the deviation is too large, this may indicate that the images are too different for a meaningful fit.
+      }
+    }
+}
+
+\relatedtools { ColorCalibration, BackgroundNeutralization, PhotometricColorCalibration, SpectrophotometricColorCalibration, ChannelExtraction, ChannelCombination, LRGBCombination}
+
+\make[noauthors]
